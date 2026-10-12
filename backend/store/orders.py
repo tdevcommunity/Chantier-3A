@@ -142,7 +142,7 @@ def list_orders_for_event(st: Store, event_id: str) -> list[Order]:
 
 
 def has_active_order_for_event_email(st: Store, event_id: str, email: str) -> bool:
-    """True if this email already has a pending or paid order on the event."""
+    """True if this email already has a paid order on the event (pending may be replaced)."""
     normalized = email.strip().lower()
     if not normalized:
         return False
@@ -150,12 +150,32 @@ def has_active_order_for_event_email(st: Store, event_id: str, email: str) -> bo
         """
         SELECT id FROM orders
         WHERE event_id = ? AND lower(buyer_email) = ?
-          AND status IN ('pending', 'paid')
+          AND status = 'paid'
         LIMIT 1
         """,
         (event_id, normalized),
     )
     return row is not None
+
+
+def cancel_pending_orders_for_event_email(st: Store, event_id: str, email: str) -> int:
+    """Release inventory and fail abandoned checkout attempts for the same e-mail."""
+    normalized = email.strip().lower()
+    if not normalized:
+        return 0
+    rows = st.fetchall(
+        """
+        SELECT id FROM orders
+        WHERE event_id = ? AND lower(buyer_email) = ? AND status = 'pending'
+        """,
+        (event_id, normalized),
+    )
+    n = 0
+    for row in rows:
+        oid = row["id"] if hasattr(row, "keys") else row[0]
+        if cancel_order_release_inventory(st, oid):
+            n += 1
+    return n
 
 
 def _tx_exec(st: Store, conn, query: str, args: tuple) -> int:
@@ -296,6 +316,20 @@ def _cancel_order_tx(st, conn, order_id: str) -> bool:
             (qty, tt_id),
         )
     return True
+
+
+def update_provider_ref(st: Store, order_id: str, provider_ref: str) -> None:
+    """Persist Velto (or other) transaction id on a pending order after checkout begins."""
+    ref = provider_ref.strip()
+    if not ref:
+        return
+    conn = st.primary
+    conn.execute(
+        rebind_query(
+            "UPDATE orders SET provider_ref = ? WHERE id = ? AND status = 'pending'"
+        ),
+        (ref, order_id),
+    )
 
 
 def settle_order(

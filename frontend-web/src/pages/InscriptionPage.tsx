@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { RegistrationWizard } from '@/components/registration/RegistrationWizard';
@@ -13,7 +13,11 @@ import {
 } from '@/components/ui/dialog';
 import { resolveLiveCheckoutProduct } from '@/lib/billetterie-storefront';
 import { completeCheckout } from '@/lib/billetterie-checkout';
-import { clearRegistrationDraft, type RegistrationFormValues } from '@/lib/registration-form';
+import {
+  clearRegistrationDraft,
+  loadRegistrationDraft,
+  type RegistrationFormValues,
+} from '@/lib/registration-form';
 import {
   applyPartnerAccentFromQuery,
   isEmbedMode,
@@ -23,6 +27,7 @@ import {
 import { checkoutFailureCopy, logCheckoutDiagnostic } from '@/lib/user-facing-checkout-error';
 import { downloadGuestTicketPdfForOrder } from '@/lib/download-guest-ticket-pdf';
 import { StorefrontBrandHomeLink } from '@/components/storefront/StorefrontBrandHomeLink';
+import { isVeltoReturn, settleVeltoReturnFromUrl } from '@/lib/velto-payment-return';
 import type { BilletterieListingProduct } from '@/lib/static-billetterie-catalog';
 
 const isSafeRedirect = (url: string) => {
@@ -48,6 +53,8 @@ export default function InscriptionPage() {
 
   const [wizardKey, setWizardKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingPayment, setConfirmingPayment] = useState(() => isVeltoReturn(searchParams));
+  const veltoReturnHandled = useRef(false);
   const [successOpen, setSuccessOpen] = useState(false);
   const [successTitle, setSuccessTitle] = useState('');
   const [successBody, setSuccessBody] = useState('');
@@ -86,6 +93,36 @@ export default function InscriptionPage() {
     setFailureOpen(true);
   };
 
+  useEffect(() => {
+    if (veltoReturnHandled.current || !isVeltoReturn(searchParams)) return;
+    veltoReturnHandled.current = true;
+    setConfirmingPayment(true);
+    const draftEmail = loadRegistrationDraft()?.values.email.trim() || '';
+    void settleVeltoReturnFromUrl(searchParams, navigate, location.pathname, draftEmail)
+      .then((result) => {
+      if (!result) return;
+      const email = result.buyerEmail.trim() || draftEmail;
+      const ticket =
+        result.outcome === 'paid' && email ? { orderId: result.orderId, email } : null;
+      if (result.outcome === 'paid') {
+        showSuccess(
+          'Paiement confirmé',
+          'Merci ! Votre billet est réservé. Vous recevrez votre confirmation par e-mail dans quelques instants. Pensez à vérifier vos spams.',
+          ticket,
+        );
+      } else if (result.outcome === 'failed' || result.outcome === 'unpaid') {
+        showFailure(new Error('velto_declined'), 'velto_return');
+      } else {
+        showSuccess(
+          'Paiement en cours de validation',
+          'Nous vérifions votre paiement Mobile Money. Aucun billet n’est émis tant que la banque n’a pas confirmé.',
+        );
+      }
+    })
+      .finally(() => setConfirmingPayment(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- une fois par retour Velto (params lus au montage)
+  }, []);
+
   const handleSubmit = async (values: RegistrationFormValues, active: BilletterieListingProduct) => {
     const passTitle = active.title;
     setSubmitting(true);
@@ -116,19 +153,13 @@ export default function InscriptionPage() {
       }
 
       if (outcome.redirectUrl && isSafeRedirect(outcome.redirectUrl)) {
-        showSuccess(
-          'Paiement sécurisé',
-          `Après validation de votre paiement, vous recevrez vos billets par e-mail à ${outcome.email}.`,
-        );
-        window.setTimeout(() => {
-          window.location.href = outcome.redirectUrl!;
-        }, 1200);
+        window.location.href = outcome.redirectUrl;
         return;
       }
 
       showSuccess(
-        'Commande enregistrée',
-        `Votre commande est enregistrée. Le billet sera envoyé à ${outcome.email} dès confirmation du paiement.`,
+        'Paiement en attente',
+        `Finalisez votre paiement Mobile Money. Votre billet sera envoyé à ${outcome.email} uniquement après confirmation du paiement.`,
       );
     } catch (err) {
       showFailure(err);
@@ -197,8 +228,8 @@ export default function InscriptionPage() {
           <h1 className="text-xl font-display font-bold tracking-tight">{listing.title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {listing.isFree
-              ? 'Formulaire gratuit · billet envoyé par e-mail'
-              : 'Formulaire puis paiement sécurisé · billets envoyés par e-mail'}
+              ? 'Formulaire gratuit · billet par e-mail après confirmation'
+              : 'Formulaire puis paiement · billet par e-mail après paiement confirmé'}
           </p>
         </div>
 
@@ -207,7 +238,11 @@ export default function InscriptionPage() {
             key={wizardKey}
             passTitle={listing.title}
             isFree={listing.isFree}
-            submitting={submitting}
+            submitting={submitting || confirmingPayment}
+            submittingLabel={
+              confirmingPayment ? 'Confirmation du paiement et émission du billet…' : undefined
+            }
+            resumeAtSummaryStep={confirmingPayment}
             onSubmit={(values) => void handleSubmit(values, listing)}
           />
         </div>

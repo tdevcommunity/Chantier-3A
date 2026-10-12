@@ -9,6 +9,7 @@ from config import Config
 from notify.notify import NotifyService
 from orders.service import OrdersService
 from payments.fedapay import FedapayProvider
+from payments.velto import VeltoProvider
 from payments.free import FreeProvider
 from payments.manual import ManualProvider
 from payments.registry import Registry
@@ -82,6 +83,15 @@ def build_payment_registry(store: Store, config: Config) -> Registry:
                 default_callback_url=config.base_url,
             )
         )
+    if config.velto_secret_key:
+        reg.register(
+            VeltoProvider(
+                secret_key=config.velto_secret_key,
+                webhook_secret=config.velto_webhook_secret,
+                timeout=float(config.payment_service_timeout),
+                default_callback_url=(config.storefront_url or config.base_url or "").strip(),
+            )
+        )
     return reg
 
 
@@ -90,7 +100,7 @@ def build_services(store: Store, config: Config) -> AppServices:
     unlock_store_vault(store, config)
     payments = build_payment_registry(store, config)
     notify = NotifyService(store, config)
-    orders = OrdersService(store, payments, notify=notify)
+    orders = OrdersService(store, payments, notify=notify, storefront_url=config.storefront_url)
     return AppServices(payments=payments, orders=orders, notify=notify, webhook_seen=_MemorySeenStore())
 
 

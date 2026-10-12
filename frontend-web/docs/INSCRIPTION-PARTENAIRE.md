@@ -14,7 +14,7 @@ Base production : **`https://festival.ourtdev.com`**
 
 - **URL recommandée** : `/inscription/nexus-night`
 - Exemple : `https://festival.ourtdev.com/inscription/nexus-night`
-- Flux : formulaire → **paiement FedaPay** → billets par e-mail (Festival + Nexus).
+- Flux : formulaire → **paiement Velto (Mobile Money)** → billets par e-mail (Festival + Nexus).
 
 ## Alias acceptés
 

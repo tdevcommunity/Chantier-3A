@@ -39,6 +39,9 @@ ENV_PAYMENT_SERVICE_TIMEOUT = "CHANTIER3A_PAYMENT_SERVICE_TIMEOUT"
 ENV_FEDAPAY_SECRET_KEY = "CHANTIER3A_FEDAPAY_SECRET_KEY"
 ENV_FEDAPAY_WEBHOOK_SECRET = "CHANTIER3A_FEDAPAY_WEBHOOK_SECRET"
 ENV_FEDAPAY_ENV = "CHANTIER3A_FEDAPAY_ENV"
+ENV_VELTO_SECRET_KEY = "CHANTIER3A_VELTO_SECRET_KEY"
+ENV_VELTO_WEBHOOK_SECRET = "CHANTIER3A_VELTO_WEBHOOK_SECRET"
+ENV_STOREFRONT_URL = "CHANTIER3A_STOREFRONT_URL"
 ENV_KEY_PASSPHRASE = "CHANTIER3A_KEY_PASSPHRASE"
 ENV_PUBLIC_SIGNUP = "CHANTIER3A_PUBLIC_SIGNUP"
 ENV_CONTACT_TO = "CHANTIER3A_CONTACT_TO"
@@ -88,6 +91,9 @@ class Config:
     fedapay_secret_key: str
     fedapay_webhook_secret: str
     fedapay_env: str
+    velto_secret_key: str
+    velto_webhook_secret: str
+    storefront_url: str
     public_signup: bool
     contact_to: str
     secret_key: str
@@ -225,6 +231,9 @@ def load_config(
         fedapay_secret_key=_env(ENV_FEDAPAY_SECRET_KEY),
         fedapay_webhook_secret=_env(ENV_FEDAPAY_WEBHOOK_SECRET),
         fedapay_env="live" if _env(ENV_FEDAPAY_ENV).lower() == "live" else "sandbox",
+        velto_secret_key=_env(ENV_VELTO_SECRET_KEY),
+        velto_webhook_secret=_env(ENV_VELTO_WEBHOOK_SECRET),
+        storefront_url=_env(ENV_STOREFRONT_URL) or "http://localhost:5173",
         public_signup=demo or _truthy(ENV_PUBLIC_SIGNUP),
         contact_to=_env(ENV_CONTACT_TO),
         secret_key=jwt_secret,

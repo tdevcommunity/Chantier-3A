@@ -50,6 +50,7 @@ class CreateOrderBody(BaseModel):
     items: list[OrderItemBody]
     buyer: BuyerBody
     provider: str = ""
+    return_path: str = ""
 
 
 def _registration_json(o) -> dict:
@@ -189,6 +190,7 @@ def create_order(body: CreateOrderBody, state: AppState = Depends(get_app_state)
         registration_form=body.buyer.form,
         items=[OrderItemInput(t.ticket_type_id, t.quantity) for t in body.items],
         provider=body.provider,
+        return_path=body.return_path,
     )
     if state.current_user:
         inp.user_id = state.current_user.id
@@ -208,6 +210,18 @@ def create_order(body: CreateOrderBody, state: AppState = Depends(get_app_state)
         message = str(err)
         if message.startswith("orders:"):
             message = "Inscription impossible. Vérifiez vos informations et réessayez."
+        elif message.startswith("Formulaire incomplet"):
+            pass
+        elif "Mobile Money invalide" in message or "phone_number" in message:
+            message = (
+                "Numéro Mobile Money invalide. Utilisez le format international sans 0 initial "
+                "(ex. 22890123456 pour le Togo, 22997123456 pour le Bénin)."
+            )
+        elif message.startswith("Accès refusé") or "whitelist" in message.lower():
+            message = (
+                f"{message} "
+                "Ajoutez http://127.0.0.1:5173 et http://localhost:5173 dans la whitelist de votre application Velto."
+            )
         return json_error(400, "invalid_request", message)
     except Exception:
         return json_error(500, "internal_error", "Service billetterie temporairement indisponible.")

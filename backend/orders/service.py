@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
+from urllib.parse import urlencode
 
 from events import issue as issue_mod
 from events.passes import PASS_TIER_STUDENT, PASS_TIER_VIP
@@ -72,6 +73,7 @@ class CreateOrderInput:
     items: list[OrderItemInput] | None = None
     provider: str = ""
     callback_url: str = ""
+    return_path: str = ""
 
 
 @dataclass
@@ -122,11 +124,13 @@ class OrdersService:
         store: Store,
         payments: Registry,
         notify: PaidNotifier | None = None,
+        storefront_url: str = "",
     ) -> None:
         """Initialize ``OrdersService``."""
         self._store = store
         self._payments = payments
         self._notify = notify
+        self._storefront_url = storefront_url.strip()
 
     def create(self, inp: CreateOrderInput) -> tuple[OrderView, pt.Charge]:
         """Create on ``OrdersService``."""
@@ -154,6 +158,9 @@ class OrdersService:
             )
         except reg.RegistrationError as err:
             raise OrdersError(str(err)) from err
+        orders_repo.cancel_pending_orders_for_event_email(
+            self._store, inp.event_id, registration.email
+        )
         if orders_repo.has_active_order_for_event_email(
             self._store, inp.event_id, registration.email
         ):
@@ -185,6 +192,8 @@ class OrdersService:
                 )
             )
         provider = self._resolve_provider(inp.provider, amount_minor=subtotal)
+        if subtotal > 0 and provider.name() == pt.PROVIDER_NAME_FREE:
+            raise ErrPaymentUnavailable
         order_id = new_ulid()
         ord_row = orders_repo.Order(
             id=order_id,
@@ -204,7 +213,7 @@ class OrdersService:
             total_minor=subtotal,
             currency=currency,
             provider=provider.name(),
-            provider_ref=order_id,
+            provider_ref=None,
             created_at=now,
             paid_at=None,
         )
@@ -214,6 +223,7 @@ class OrdersService:
             raise ErrSoldOut from err
         except NotFoundError as err:
             raise ErrTicketTypeNotFound from err
+        callback_url = self._payment_callback_url(order_id, inp)
         try:
             charge = provider.begin(
                 pt.Order(
@@ -223,15 +233,37 @@ class OrdersService:
                     buyer_name=holder_name,
                     amount_minor=subtotal,
                     currency=currency,
-                    callback_url=inp.callback_url,
+                    callback_url=callback_url,
+                    metadata={},
                 )
             )
+        except ValueError as err:
+            orders_repo.cancel_order_release_inventory(self._store, order_id)
+            msg = str(err)
+            if msg.startswith("velto:"):
+                raise OrdersError(msg[6:].strip()) from err
+            raise ErrPaymentUnavailable from err
         except Exception as err:
             # Do not keep stock reserved by an order that can never be paid.
             orders_repo.cancel_order_release_inventory(self._store, order_id)
             raise ErrPaymentUnavailable from err
+        if charge.client_token.strip():
+            orders_repo.update_provider_ref(self._store, order_id, charge.client_token.strip())
+            ord_row.provider_ref = charge.client_token.strip()
         view = self._to_view(ord_row, order_items)
         return view, charge
+
+    def _payment_callback_url(self, order_id: str, inp: CreateOrderInput) -> str:
+        explicit = inp.callback_url.strip()
+        if explicit:
+            return explicit
+        path = (inp.return_path or "/").strip() or "/"
+        if not path.startswith("/"):
+            path = f"/{path}"
+        q = urlencode({"velto_return": "1", "order": order_id})
+        sep = "&" if "?" in path else "?"
+        base = self._storefront_url or "http://localhost:5173"
+        return f"{base.rstrip('/')}{path}{sep}{q}"
 
     def _resolve_provider(self, name: str, *, amount_minor: int) -> pt.Provider:
         """Resolve provider on ``OrdersService``."""

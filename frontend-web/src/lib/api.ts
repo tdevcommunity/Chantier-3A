@@ -588,6 +588,7 @@ export interface CreateOrderInput {
     items: Array<{ ticket_type_id: string; quantity: number }>;
     buyer: CreateOrderBuyer;
     provider?: string;
+    return_path?: string;
 }
 
 export interface CreateOrderResponse {
@@ -656,7 +657,18 @@ export const orders = {
 // ---------------------------------------------------------------------------
 
 export const payments = {
-    verify: (reference: string) => post<VerifyPaymentResponse>('/payments/verify', { reference }),
+    status: (reference: string, veltoTransactionId?: string) =>
+        post<{ payment_status: string; order_status: string }>('/payments/status', {
+            reference,
+            ...(veltoTransactionId ? { velto_transaction_id: veltoTransactionId } : {}),
+        }),
+    verify: (reference: string, veltoTransactionId?: string) =>
+        post<VerifyPaymentResponse>('/payments/verify', {
+            reference,
+            ...(veltoTransactionId ? { velto_transaction_id: veltoTransactionId } : {}),
+        }),
+    abandon: (reference: string, email: string) =>
+        post<{ order: Order; released: boolean }>('/payments/abandon', { reference, email }),
 };
 
 // ---------------------------------------------------------------------------

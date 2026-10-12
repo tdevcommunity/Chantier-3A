@@ -49,13 +49,25 @@ interface RegistrationWizardProps {
     /** Le pass gratuit et le pass payant partagent exactement le même formulaire. */
     isFree: boolean;
     submitting: boolean;
+    /** Libellé du bouton principal pendant `submitting` (ex. retour Mobile Money). */
+    submittingLabel?: string;
+    /** Afficher l’étape récapitulatif (retour paiement Velto). */
+    resumeAtSummaryStep?: boolean;
     onSubmit: (values: RegistrationFormValues) => void;
 }
 
-export function RegistrationWizard({ passTitle, isFree, submitting, onSubmit }: RegistrationWizardProps) {
+export function RegistrationWizard({
+    passTitle,
+    isFree,
+    submitting,
+    submittingLabel,
+    resumeAtSummaryStep = false,
+    onSubmit,
+}: RegistrationWizardProps) {
     const draft = useMemo(() => loadRegistrationDraft(), []);
     const [values, setValues] = useState<RegistrationFormValues>(draft?.values ?? emptyRegistrationForm());
     const [step, setStep] = useState(() => {
+        if (resumeAtSummaryStep) return REGISTRATION_STEP_COUNT - 1;
         const saved = draft?.step ?? 0;
         return Math.min(Math.max(saved, 0), REGISTRATION_STEP_COUNT - 1);
     });
@@ -191,13 +203,16 @@ export function RegistrationWizard({ passTitle, isFree, submitting, onSubmit }: 
                             label="Numéro de téléphone ou WhatsApp"
                             htmlFor="phone"
                             error={errors.phone}
-                            hint="Nous l'utilisons uniquement pour les informations pratiques du festival."
+                            hint="Pour vous contacter si besoin (informations pratiques du festival)."
                             required
                         >
                             <Input
                                 id="phone"
                                 type="tel"
                                 inputMode="tel"
+                                placeholder={
+                                    values.country === 'Togo' ? '+228 90 00 00 00' : '+228… ou +229…'
+                                }
                                 value={values.phone}
                                 onChange={(ev) => set('phone', ev.target.value)}
                                 autoComplete="tel"
@@ -424,8 +439,8 @@ export function RegistrationWizard({ passTitle, isFree, submitting, onSubmit }: 
                         )}
                         <p className="text-xs text-muted-foreground">
                             {isFree
-                                ? `Votre ${passTitle} vous sera envoyé par e-mail après validation.`
-                                : `Vous allez être redirigé(e) vers le paiement sécurisé du ${passTitle}. L'accès complet au festival est inclus.`}
+                                ? `Après confirmation, votre ${passTitle} vous sera envoyé par e-mail (gratuit, sans paiement).`
+                                : `Étape suivante : règlement sécurisé de votre ${passTitle}. Votre billet vous sera envoyé par e-mail une fois le paiement confirmé.`}
                         </p>
                     </>
                 )}
@@ -445,7 +460,7 @@ export function RegistrationWizard({ passTitle, isFree, submitting, onSubmit }: 
                         {submitting ? (
                             <>
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Envoi en cours…
+                                {submittingLabel ?? 'Envoi en cours…'}
                             </>
                         ) : isLastStep ? (
                             isFree ? (

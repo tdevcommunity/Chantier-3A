@@ -20,6 +20,7 @@ import config as config_module
 config_module._ENV_LOADED = True
 for _key in [k for k in os.environ if k.startswith("CHANTIER3A_")]:
     del os.environ[_key]
+os.environ["CHANTIER3A_DISABLE_PENDING_CLEANUP"] = "1"
 
 from bootstrap import build_services  # noqa: E402
 from config import load_config  # noqa: E402

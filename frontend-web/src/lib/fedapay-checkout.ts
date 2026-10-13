@@ -99,11 +99,13 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 export async function confirmPayment(
     orderId: string,
+    buyerEmail: string,
     { attempts = VERIFY_MAX_ATTEMPTS, intervalMs = VERIFY_INTERVAL_MS } = {},
 ): Promise<'paid' | 'pending'> {
+    const email = buyerEmail.trim();
     for (let i = 0; i < attempts; i++) {
         try {
-            await paymentsApi.verify(orderId);
+            await paymentsApi.verify(orderId, email);
             return 'paid';
         } catch (err) {
             if (!(err instanceof ApiError) || err.status !== 402) throw err;
@@ -134,12 +136,12 @@ export async function payWithFedapay(params: {
         const result = await openWidget(transactionId, customer);
         if (result === 'dismissed') {
             // Une fermeture peut suivre un paiement déjà accepté : une seule vérification.
-            const once = await confirmPayment(orderId, { attempts: 1 });
+            const once = await confirmPayment(orderId, email, { attempts: 1 });
             if (once === 'paid') return 'paid';
             if (await recoverPaidOrder(orderId, email)) return 'paid';
             return 'dismissed';
         }
-        const confirmed = await confirmPayment(orderId);
+        const confirmed = await confirmPayment(orderId, email);
         if (confirmed === 'paid') return 'paid';
         if (await recoverPaidOrder(orderId, email)) return 'paid';
         return confirmed;

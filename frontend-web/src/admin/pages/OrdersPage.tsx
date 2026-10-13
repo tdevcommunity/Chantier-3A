@@ -14,6 +14,7 @@ import { EmptyState, ErrorState, TableSkeleton } from '../components/ui/Feedback
 import { ordersService } from '../services/orders.service';
 import { exportsService } from '../services/exports.service';
 import { useToast } from '../context/ToastContext';
+import { adminUserMessage } from '../lib/admin-user-message';
 import { formatMoney, formatDateTime } from '../lib/utils';
 import { Order, OrderStatus } from '../types';
 import { useEvent } from '../context/EventContext';
@@ -49,7 +50,7 @@ export const OrdersPage: React.FC = () => {
       setOrders(res.data);
       setTotal(res.total);
     } catch (err: any) {
-      setError(err.message || 'Erreur lors de la récupération des commandes.');
+      setError(adminUserMessage(err, 'Erreur lors de la récupération des commandes.'));
     } finally {
       setLoading(false);
     }

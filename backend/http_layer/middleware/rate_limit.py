@@ -37,6 +37,42 @@ class ScanRateLimitMiddleware(BaseHTTPMiddleware):
         q.append(now)
         return await call_next(request)
 
+class CheckoutRateLimitMiddleware(BaseHTTPMiddleware):
+    """Rate limit public checkout and payment verify by IP."""
+
+    RULES = {
+        ("POST", "/api/payments/verify"): (10, 60),
+        ("POST", "/api/orders"): (20, 60),
+    }
+
+    def __init__(self, app) -> None:
+        super().__init__(app)
+        self._hits: dict[tuple[str, str, str], deque[float]] = defaultdict(deque)
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        rule = self.RULES.get((request.method, request.url.path))
+        if rule is None:
+            return await call_next(request)
+
+        max_requests, window_seconds = rule
+        ip = request.client.host if request.client else "unknown"
+        key = (ip, request.method, request.url.path)
+
+        now = time.monotonic()
+        hits = self._hits[key]
+        while hits and now - hits[0] >= window_seconds:
+            hits.popleft()
+
+        if len(hits) >= max_requests:
+            retry_after = max(1, math.ceil(window_seconds - (now - hits[0])))
+            response = json_error(429, "rate_limited", "Trop de requêtes. Réessayez dans un instant.")
+            response.headers["Retry-After"] = str(retry_after)
+            return response
+
+        hits.append(now)
+        return await call_next(request)
+
+
 class AuthRateLimitMiddleware(BaseHTTPMiddleware):
     RULES = {
         ("POST", "/api/auth/signup"): (10, 3600),

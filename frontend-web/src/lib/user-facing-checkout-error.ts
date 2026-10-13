@@ -59,8 +59,8 @@ function copyFromApiError(err: ApiError): CheckoutFailureCopy {
     switch (err.code) {
         case 'duplicate_registration':
             return {
-                title: 'Inscription déjà enregistrée',
-                body: 'Cette adresse e-mail a déjà été utilisée pour une inscription validée à cet événement.',
+                title: 'Inscription impossible',
+                body: 'Impossible de finaliser cette inscription avec ces informations.',
             };
         case 'payment_not_confirmed':
             return PAYMENT_NOT_CONFIRMED;
@@ -92,8 +92,8 @@ function copyFromApiError(err: ApiError): CheckoutFailureCopy {
     }
     if (err.status === 409 && err.code === 'duplicate_registration') {
         return {
-            title: 'Inscription déjà enregistrée',
-            body: 'Cette adresse e-mail a déjà été utilisée pour une inscription validée à cet événement.',
+            title: 'Inscription impossible',
+            body: 'Impossible de finaliser cette inscription avec ces informations.',
         };
     }
 
@@ -108,9 +108,16 @@ function copyFromApiError(err: ApiError): CheckoutFailureCopy {
 
     if (err.status === 400 && err.code === 'invalid_request') {
         const msg = err.message.trim();
-        if (looksLikeVisitorFrench(msg)) {
+        if (
+            msg.startsWith('Formulaire incomplet') ||
+            msg.includes('Mobile Money invalide') ||
+            msg.startsWith('Adresse e-mail')
+        ) {
             return { title: 'Échec de la réservation', body: msg };
         }
+    }
+    if (err.status === 422) {
+        return GENERIC_RESERVATION;
     }
 
     return GENERIC_RESERVATION;

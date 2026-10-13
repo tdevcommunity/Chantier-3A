@@ -43,7 +43,10 @@ def test_export_participants_csv_includes_registration_fields(client: TestClient
     )
     assert order.status_code == 201, order.text
     order_id = order.json()["order"]["id"]
-    verify = client.post("/api/payments/verify", json={"reference": order_id})
+    verify = client.post(
+        "/api/payments/verify",
+        json={"reference": order_id, "email": form["email"]},
+    )
     assert verify.status_code == 200, verify.text
 
     r = client.get(f"/api/events/{fx['event_id']}/exports/participants.csv", headers=admin_h)

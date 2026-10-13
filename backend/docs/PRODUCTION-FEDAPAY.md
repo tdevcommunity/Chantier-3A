@@ -112,3 +112,10 @@ Ne laissez pas les clés sandbox et live mélangées : `pk_live` avec `sk_sandbo
 | Webhook en 400 | Secret du webhook absent ou faux, ou horloge du serveur décalée de plus de 5 minutes (tolérance de la signature). |
 | Le lien de l'e-mail renvoie 404 | `CHANTIER3A_BASE_URL` ne pointe pas vers une origine où `/api/...` atteint le backend. |
 | Erreur CORS dans le navigateur | Le site n'est pas servi depuis exactement l'origine de `CHANTIER3A_BASE_URL`. |
+
+## 9. Checklist ouverture billetterie payante
+
+- [ ] `VITE_FEDAPAY_PUBLIC_KEY=pk_live_…` et `VITE_FEDAPAY_ENV=live` au **build** du front (pas de clé `pk_sandbox_…` dans le bundle prod).
+- [ ] `CHANTIER3A_FEDAPAY_SECRET_KEY=sk_live_…` et secret webhook live côté API.
+- [ ] Parcours test live avec un petit montant + `POST /api/payments/verify` avec **e-mail acheteur** (obligatoire).
+- [ ] Nettoyage commandes pentest : voir [`PENTEST-CLEANUP.md`](PENTEST-CLEANUP.md).

@@ -340,13 +340,14 @@ class OrdersService:
             def mint_one(ticket_type_id: str) -> tickets_repo.Ticket:
                 ref = pass_serial.next_pass_ref(self._store, conn, ref_year, drawn)
                 tid = new_ulid()
+                holder = reg.safe_holder_name(ord_row.buyer_name)
                 payload = cap.Payload(
                     tid=tid,
                     ref=ref,
                     eid=ord_row.event_id,
                     tt=ticket_type_id,
                     sub=ord_row.user_id or "",
-                    name=ord_row.buyer_name,
+                    name=holder,
                     iat=int(paid_at.timestamp()),
                     nbf=nbf,
                     exp=exp,
@@ -358,7 +359,7 @@ class OrdersService:
                     event_id=ord_row.event_id,
                     ticket_type_id=ticket_type_id,
                     holder_user_id=ord_row.user_id,
-                    holder_name=ord_row.buyer_name,
+                    holder_name=holder,
                     serial=ref,
                     capability=token,
                     status="valid",

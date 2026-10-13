@@ -13,6 +13,7 @@ import { ticketsService } from '../services/tickets.service';
 import { exportsService } from '../services/exports.service';
 import { useToast } from '../context/ToastContext';
 import { useEvent } from '../context/EventContext';
+import { adminUserMessage } from '../lib/admin-user-message';
 import { formatDateTime } from '../lib/utils';
 import { Ticket, TicketStatus } from '../types';
 
@@ -36,7 +37,7 @@ export const TicketsPage: React.FC = () => {
       }, eventId);
       setTickets(data);
     } catch (err: any) {
-      setError(err.message || 'Impossible de récupérer les billets.');
+      setError(adminUserMessage(err, 'Impossible de récupérer les billets.'));
     } finally {
       setLoading(false);
     }

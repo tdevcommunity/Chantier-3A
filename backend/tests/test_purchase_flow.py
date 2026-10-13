@@ -112,7 +112,10 @@ def test_remote_purchase_webhook_settle(demo_store, tmp_path):
     )
     assert wh.status_code == 200, wh.text
 
-    verify = tc.post("/api/payments/verify", json={"reference": order_id})
+    verify = tc.post(
+        "/api/payments/verify",
+        json={"reference": order_id, "email": "buyer@example.com"},
+    )
     assert verify.status_code == 200, verify.text
     assert verify.json()["order"]["status"] == "paid"
     assert len(verify.json()["tickets"]) == 2

@@ -5,6 +5,7 @@ import { useEvent } from '../context/EventContext';
 import { useToast } from '../context/ToastContext';
 import { Event } from '../types';
 import { ErrorState } from '../components/ui/FeedbackStates';
+import { adminUserMessage } from '../lib/admin-user-message';
 
 export const EventSettingsPage: React.FC = () => {
   const { eventId, loading: eventLoading, error: eventError } = useEvent();
@@ -47,7 +48,7 @@ export const EventSettingsPage: React.FC = () => {
       setEvent(updated);
       success('Événement', 'Modifications enregistrées.');
     } catch (err: unknown) {
-      error('Enregistrement', err instanceof Error ? err.message : 'Impossible de sauvegarder.');
+      error('Enregistrement', adminUserMessage(err, 'Impossible de sauvegarder.'));
     } finally {
       setSaving(false);
     }
@@ -59,7 +60,7 @@ export const EventSettingsPage: React.FC = () => {
       setEvent(updated);
       success('Publication', 'L’événement est publié.');
     } catch (err: unknown) {
-      error('Publication', err instanceof Error ? err.message : 'Publication impossible.');
+      error('Publication', adminUserMessage(err, 'Publication impossible.'));
     }
   };
 

@@ -6,6 +6,7 @@ import json
 
 from fastapi import APIRouter, Depends, Request
 
+from auth.email_canonical import canonical_email
 from http_layer.deps import AppState, get_app_state
 from http_layer.errors import json_error
 from orders.service import OrdersError
@@ -109,17 +110,26 @@ def payment_status(body: dict, state: AppState = Depends(get_app_state)):
 def abandon_pending_payment(body: dict, state: AppState = Depends(get_app_state)):
     """Release a pending checkout after a failed or cancelled Mobile Money attempt."""
     reference = (body.get("reference") or "").strip()
-    email = (body.get("email") or "").strip().lower()
+    raw_email = (body.get("email") or "").strip()
     if not reference:
-        return json_error(400, "invalid_request", "reference is required")
+        return json_error(400, "invalid_request", "Référence de commande requise.")
     try:
         order = state.services.orders.get(reference)
     except NotFoundError:
-        return json_error(404, "not_found", "order not found")
+        return json_error(404, "not_found", "Commande introuvable.")
     if order.status != "pending":
         return {"order": _order_json(order), "released": False}
-    if email and order.buyer_email.strip().lower() != email:
-        return json_error(403, "forbidden", "email does not match this order")
+    if raw_email:
+        try:
+            email = canonical_email(raw_email)
+        except ValueError:
+            return json_error(400, "invalid_request", "Adresse e-mail invalide.")
+        try:
+            if canonical_email(order.buyer_email) != email:
+                return json_error(404, "not_found", "Commande introuvable.")
+        except ValueError:
+            if order.buyer_email.strip().lower() != email:
+                return json_error(404, "not_found", "Commande introuvable.")
     try:
         updated = state.services.orders.mark_failed(reference)
     except OrdersError:
@@ -127,17 +137,33 @@ def abandon_pending_payment(body: dict, state: AppState = Depends(get_app_state)
     return {"order": _order_json(updated), "released": True}
 
 
+def _email_matches_order(order, raw_email: str) -> bool:
+    try:
+        return canonical_email(order.buyer_email) == canonical_email(raw_email)
+    except ValueError:
+        return False
+
+
 @router.post("/verify")
 def verify_payment(body: dict, state: AppState = Depends(get_app_state)):
     """Verify payment."""
     reference = (body.get("reference") or "").strip()
     velto_txn = (body.get("velto_transaction_id") or "").strip()
+    raw_email = (body.get("email") or "").strip()
     if not reference:
-        return json_error(400, "invalid_request", "reference is required")
+        return json_error(400, "invalid_request", "Référence de commande requise.")
+    if not raw_email:
+        return json_error(400, "invalid_request", "Adresse e-mail requise.")
+    try:
+        canonical_email(raw_email)
+    except ValueError:
+        return json_error(400, "invalid_request", "Adresse e-mail invalide.")
     try:
         order = state.services.orders.get(reference)
     except NotFoundError:
-        return json_error(404, "not_found", "order not found")
+        return json_error(404, "not_found", "Commande introuvable.")
+    if not _email_matches_order(order, raw_email):
+        return json_error(404, "not_found", "Commande introuvable.")
     provider = state.services.payments.get(order.provider)
     if provider is None:
         return json_error(500, "internal_error", "provider not registered")
@@ -176,16 +202,20 @@ def verify_payment(body: dict, state: AppState = Depends(get_app_state)):
             existing = state.services.orders.get(reference)
             if existing.status == "paid":
                 minted = state.services.orders.tickets_for_order(reference)
+                from http_layer.routes.orders import _verify_success_order_json
+
                 return {
-                    "order": _order_json(existing),
+                    "order": _verify_success_order_json(existing),
                     "tickets": _tickets_json(minted),
                 }
         except NotFoundError:
             pass
         return json_error(500, "internal_error", "internal error")
     updated = state.services.orders.get(reference)
+    from http_layer.routes.orders import _verify_success_order_json
+
     return {
-        "order": _order_json(updated),
+        "order": _verify_success_order_json(updated),
         "tickets": _tickets_json(tickets),
     }
 

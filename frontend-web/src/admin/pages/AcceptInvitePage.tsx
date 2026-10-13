@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { AdminTdevLogo } from '../components/brand/AdminTdevLogo';
 import { AdminAuthShell } from '../components/brand/AdminAuthShell';
+import { adminUserMessage } from '../lib/admin-user-message';
 
 export const AcceptInvitePage: React.FC = () => {
   const [params] = useSearchParams();
@@ -44,7 +45,7 @@ export const AcceptInvitePage: React.FC = () => {
       success('Invitation acceptée', 'Vous avez rejoint l’organisation.');
       navigate('../dashboard', { replace: true });
     } catch (err: unknown) {
-      error('Invitation', err instanceof Error ? err.message : 'Action impossible.');
+      error('Invitation', adminUserMessage(err, 'Action impossible.'));
     } finally {
       setLoading(false);
     }
@@ -77,7 +78,7 @@ export const AcceptInvitePage: React.FC = () => {
               success('Invitation acceptée', '');
               navigate('../dashboard', { replace: true });
             } catch (err: unknown) {
-              error('Invitation', err instanceof Error ? err.message : 'Action impossible.');
+              error('Invitation', adminUserMessage(err, 'Action impossible.'));
             } finally {
               setLoading(false);
             }

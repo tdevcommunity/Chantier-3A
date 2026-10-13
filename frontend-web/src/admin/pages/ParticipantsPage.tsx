@@ -52,7 +52,7 @@ export const ParticipantsPage: React.FC = () => {
       setParticipants(res.data);
       setTotal(res.total);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erreur lors de la récupération des participants.';
+      const message = adminUserMessage(err, 'Erreur lors de la récupération des participants.');
       setError(message);
     } finally {
       setLoading(false);

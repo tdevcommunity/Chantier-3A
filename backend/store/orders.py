@@ -7,10 +7,19 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from auth.email_canonical import canonical_email
 from store import order_items as order_items_repo
 from store.rebind import rebind_query
 from store.store import NotFoundError, SoldOutError, Store, new_ulid
 from store.timeutil import text_to_null_time, text_to_time, time_to_text
+
+
+def _buyer_email_key(email: str) -> str:
+    """Canonical form used for uniqueness and guest lookup."""
+    try:
+        return canonical_email(email)
+    except ValueError:
+        return email.strip().lower()
 
 
 @dataclass
@@ -143,13 +152,13 @@ def list_orders_for_event(st: Store, event_id: str) -> list[Order]:
 
 def has_active_order_for_event_email(st: Store, event_id: str, email: str) -> bool:
     """True if this email already has a paid order on the event (pending may be replaced)."""
-    normalized = email.strip().lower()
+    normalized = _buyer_email_key(email)
     if not normalized:
         return False
     row = st.fetchone(
         """
         SELECT id FROM orders
-        WHERE event_id = ? AND lower(buyer_email) = ?
+        WHERE event_id = ? AND buyer_email = ?
           AND status = 'paid'
         LIMIT 1
         """,
@@ -160,13 +169,13 @@ def has_active_order_for_event_email(st: Store, event_id: str, email: str) -> bo
 
 def cancel_pending_orders_for_event_email(st: Store, event_id: str, email: str) -> int:
     """Release inventory and fail abandoned checkout attempts for the same e-mail."""
-    normalized = email.strip().lower()
+    normalized = _buyer_email_key(email)
     if not normalized:
         return 0
     rows = st.fetchall(
         """
         SELECT id FROM orders
-        WHERE event_id = ? AND lower(buyer_email) = ? AND status = 'pending'
+        WHERE event_id = ? AND buyer_email = ? AND status = 'pending'
         """,
         (event_id, normalized),
     )

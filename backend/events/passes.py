@@ -38,7 +38,7 @@ STUDENT_PASS_TICKET_TYPE_BODY: dict = {
     "name": PASS_TIER_LABELS[PASS_TIER_STUDENT],
     "description": "Accès gratuit aux deux jours du festival.",
     "price_minor": PASS_TIER_PRICE_MINOR[PASS_TIER_STUDENT],
-    "quantity_total": 0,
+    "quantity_total": 500,
     "max_per_order": 1,
     "status": "active",
     "sort_order": 0,

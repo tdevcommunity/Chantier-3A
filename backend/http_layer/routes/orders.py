@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, Field
 
 from auth import rbac
+from auth.email_canonical import canonical_email
 from http_layer.deps import AppState, get_app_state, require_user
 from http_layer.errors import json_error
 from orders import registration as reg
@@ -18,6 +19,38 @@ from events.passes import display_ticket_name
 from store.store import NotFoundError
 
 router = APIRouter(tags=["orders"])
+
+
+def _guest_email_param(raw: str) -> str | None:
+    """Parse and canonicalize guest e-mail; None if missing or invalid."""
+    if not raw.strip():
+        return None
+    try:
+        return canonical_email(raw)
+    except ValueError:
+        return None
+
+
+def _guest_email_mismatch(order_buyer: str, canonical: str) -> bool:
+    try:
+        return canonical_email(order_buyer) != canonical
+    except ValueError:
+        return order_buyer.strip().lower() != canonical.strip().lower()
+
+
+def _verify_success_order_json(o) -> dict:
+    """Payment verify response: no registration PII."""
+    out = {
+        "id": o.id,
+        "event_id": o.event_id,
+        "status": o.status,
+        "total_minor": o.total_minor,
+        "currency": o.currency,
+        "provider": o.provider,
+    }
+    if o.paid_at:
+        out["paid_at"] = o.paid_at.isoformat().replace("+00:00", "Z")
+    return out
 
 
 def _venue_line(venue: str, address: str) -> str:
@@ -205,7 +238,7 @@ def create_order(body: CreateOrderBody, state: AppState = Depends(get_app_state)
             return json_error(
                 409,
                 "duplicate_registration",
-                "Cette adresse e-mail est déjà inscrite pour cet événement.",
+                "Impossible de finaliser cette inscription avec ces informations.",
             )
         message = str(err)
         if message.startswith("orders:"):
@@ -270,15 +303,15 @@ def get_order_guest(
     state: AppState = Depends(get_app_state),
 ):
     """Guest order lookup by id + buyer email (no account required)."""
-    buyer_email = email.strip().lower()
+    buyer_email = _guest_email_param(email)
     if not buyer_email:
-        return json_error(400, "invalid_request", "email query parameter is required")
+        return json_error(400, "invalid_request", "Adresse e-mail requise.")
     try:
         order = state.services.orders.get(order_id)
     except NotFoundError:
-        return json_error(404, "not_found", "order not found")
-    if order.buyer_email.strip().lower() != buyer_email:
-        return json_error(404, "not_found", "order not found")
+        return json_error(404, "not_found", "Commande introuvable.")
+    if _guest_email_mismatch(order.buyer_email, buyer_email):
+        return json_error(404, "not_found", "Commande introuvable.")
     tickets = _guest_tickets_json(state.store, order_id) if order.status == "paid" else []
     return {"order": _order_json(order), "tickets": tickets}
 
@@ -291,17 +324,17 @@ def guest_ticket_png(
     state: AppState = Depends(get_app_state),
 ):
     """PNG pass (same asset as e-mail attachment) for guest download."""
-    buyer_email = email.strip().lower()
+    buyer_email = _guest_email_param(email)
     if not buyer_email:
-        return json_error(400, "invalid_request", "email query parameter is required")
+        return json_error(400, "invalid_request", "Adresse e-mail requise.")
     try:
         order = state.services.orders.get(order_id)
     except NotFoundError:
-        return json_error(404, "not_found", "order not found")
-    if order.buyer_email.strip().lower() != buyer_email:
-        return json_error(404, "not_found", "order not found")
+        return json_error(404, "not_found", "Commande introuvable.")
+    if _guest_email_mismatch(order.buyer_email, buyer_email):
+        return json_error(404, "not_found", "Commande introuvable.")
     if order.status != "paid":
-        return json_error(400, "invalid_request", "ticket not available until order is paid")
+        return json_error(400, "invalid_request", "Billet disponible après confirmation du paiement.")
     tickets = _guest_tickets_json(state.store, order_id)
     if not tickets:
         return json_error(404, "not_found", "no ticket issued for this order")
@@ -402,15 +435,15 @@ def guest_ticket_pdf(
     state: AppState = Depends(get_app_state),
 ):
     """PDF pass (same render as e-mail attachment) for guest download."""
-    buyer_email = email.strip().lower()
+    buyer_email = _guest_email_param(email)
     if not buyer_email:
-        return json_error(400, "invalid_request", "email query parameter is required")
+        return json_error(400, "invalid_request", "Adresse e-mail requise.")
     try:
         order = state.services.orders.get(order_id)
     except NotFoundError:
-        return json_error(404, "not_found", "order not found")
-    if order.buyer_email.strip().lower() != buyer_email:
-        return json_error(404, "not_found", "order not found")
+        return json_error(404, "not_found", "Commande introuvable.")
+    if _guest_email_mismatch(order.buyer_email, buyer_email):
+        return json_error(404, "not_found", "Commande introuvable.")
     try:
         pdf, filename = build_ticket_pdf_bytes(state, order_id, ticket_id=ticket.strip())
     except ValueError as err:

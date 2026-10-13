@@ -12,6 +12,10 @@
 	# HTML et repli SPA (/inscription/*, admin) : toujours revalider apres deploy
 	@other not path /assets/*
 	header @other Cache-Control "no-cache, must-revalidate"
+	header @other X-Frame-Options "DENY"
+	header @other Referrer-Policy "strict-origin-when-cross-origin"
+	header @other X-Content-Type-Options "nosniff"
+	header @other Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; script-src 'self' https://cdn.fedapay.com; connect-src 'self' https://*.fedapay.com https://*.velto.io https://api.fedapay.com; frame-src 'self' https://checkout.fedapay.com https://*.fedapay.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:;"
 
 	handle /assets/* {
 		file_server

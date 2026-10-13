@@ -16,6 +16,7 @@ import { admissionsService } from '../services/admissions.service';
 import { exportsService } from '../services/exports.service';
 import { useToast } from '../context/ToastContext';
 import { useEvent } from '../context/EventContext';
+import { adminUserMessage } from '../lib/admin-user-message';
 import { formatDateTime } from '../lib/utils';
 import { Admission, AdmissionResult } from '../types';
 
@@ -42,7 +43,7 @@ export const AdmissionsPage: React.FC = () => {
       );
       setAdmissions(data);
     } catch (err: any) {
-      setError(err.message || 'Impossible de récupérer les admissions.');
+      setError(adminUserMessage(err, 'Impossible de récupérer les admissions.'));
     } finally {
       setLoading(false);
     }

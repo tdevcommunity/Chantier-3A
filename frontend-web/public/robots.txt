@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://festival.ourtdev.com/sitemap.xml

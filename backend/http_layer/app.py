@@ -6,6 +6,7 @@ import logging
 import os
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRouter
 from starlette.middleware.sessions import SessionMiddleware
@@ -15,7 +16,11 @@ from bootstrap import AppServices, build_services
 from config import Config
 from http_layer.deps import AppState, _Unauthorized, unauthorized_handler
 from http_layer.errors import json_error
-from http_layer.middleware.rate_limit import AuthRateLimitMiddleware, ScanRateLimitMiddleware
+from http_layer.middleware.rate_limit import (
+    AuthRateLimitMiddleware,
+    CheckoutRateLimitMiddleware,
+    ScanRateLimitMiddleware,
+)
 from http_layer.routes import (
     auth,
     checkin as checkin_routes,
@@ -54,11 +59,21 @@ def create_app(
     app.state.services = services or build_services(store, config)
     app.add_exception_handler(_Unauthorized, unauthorized_handler)
 
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(_request: Request, exc: RequestValidationError):
+        """Do not expose Pydantic loc/type details to clients."""
+        log.warning("request validation failed: %s", exc.errors())
+        return json_error(
+            422,
+            "invalid_request",
+            "Requête invalide. Vérifiez les champs et réessayez.",
+        )
+
     origins = [config.base_url.rstrip("/")] if config.base_url else ["*"]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
     )
@@ -120,9 +135,17 @@ def create_app(
     api.include_router(extras.router)
     api.include_router(extras.images_router)
     app.add_middleware(ScanRateLimitMiddleware)
+    app.add_middleware(CheckoutRateLimitMiddleware)
     app.add_middleware(AuthRateLimitMiddleware)
     stubs.register_stubs(api)
     app.include_router(api)
 
     mount_spa(app)
+
+    @app.on_event("startup")
+    def _start_background_jobs() -> None:
+        from orders.pending_cleanup import start_pending_cleanup_loop
+
+        start_pending_cleanup_loop(store)
+
     return app

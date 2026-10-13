@@ -70,7 +70,7 @@ export async function completeCheckout(params: {
     }
 
     try {
-        await paymentsApi.verify(order.id);
+        await paymentsApi.verify(order.id, email);
     } catch {
         /* Déjà réglé côté serveur pour les commandes gratuites */
     }

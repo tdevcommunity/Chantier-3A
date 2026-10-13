@@ -62,10 +62,8 @@ async function confirmPaidOrder(
 ): Promise<{ outcome: VeltoReturnOutcome; buyerEmail: string }> {
     for (let i = 0; i < VERIFY_MAX_ATTEMPTS; i++) {
         try {
-            const res = await paymentsApi.verify(orderId, veltoTxn || undefined);
-            const email =
-                res.order.registration?.email?.trim() || res.order.buyer_email?.trim() || buyerEmail;
-            return { outcome: 'paid', buyerEmail: email };
+            await paymentsApi.verify(orderId, buyerEmail, veltoTxn || undefined);
+            return { outcome: 'paid', buyerEmail };
         } catch (err) {
             if (!(err instanceof ApiError) || err.status !== 402) {
                 return { outcome: 'pending', buyerEmail };

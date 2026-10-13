@@ -108,17 +108,58 @@ def test_free_student_pass_checkout(client: TestClient, demo_store):
     assert body["order"]["total_minor"] == 0
     assert body["order"]["provider"] == "free"
 
-    verify = client.post("/api/payments/verify", json={"reference": body["order"]["id"]})
+    email = "student@school.edu"
+    verify = client.post(
+        "/api/payments/verify",
+        json={"reference": body["order"]["id"], "email": email},
+    )
     assert verify.status_code == 200, verify.text
     assert verify.json()["order"]["status"] == "paid"
+    assert "registration" not in verify.json()["order"]
     tickets = verify.json()["tickets"]
     assert len(tickets) == 1
     assert tickets[0]["serial"].startswith("TDEV-")
-    reg = verify.json()["order"]["registration"]
+
+    guest = client.get(f"/api/orders/{body['order']['id']}/guest", params={"email": email})
+    assert guest.status_code == 200
+    reg = guest.json()["order"]["registration"]
     assert reg["school_name"] == "Universite Cheikh Anta Diop"
     assert reg["wish"]
     assert reg["form"]["city"] == "Lomé"
     assert reg["form"]["phone"] == "90000000"
+
+
+def test_student_pass_rejects_plus_alias_duplicate(client: TestClient, demo_store):
+    """Plus-addressing must not bypass one registration per canonical email."""
+    store, _cfg, _services, _app = demo_store
+    fx = seed_published_event(store)
+    tt = events_svc.create_ticket_type(store, fx["event_id"], STUDENT_PASS_TICKET_TYPE_BODY)
+    base = "pentest-sec@example.com"
+    first = client.post(
+        "/api/orders",
+        json={
+            "event_id": fx["event_id"],
+            "items": [{"ticket_type_id": tt["id"], "quantity": 1}],
+            "buyer": {"email": base, "form": sample_form(email=base)},
+        },
+    )
+    assert first.status_code == 201, first.text
+    client.post(
+        "/api/payments/verify",
+        json={"reference": first.json()["order"]["id"], "email": base},
+    )
+
+    alias = "pentest-sec+1@example.com"
+    second = client.post(
+        "/api/orders",
+        json={
+            "event_id": fx["event_id"],
+            "items": [{"ticket_type_id": tt["id"], "quantity": 1}],
+            "buyer": {"email": alias, "form": sample_form(email=alias)},
+        },
+    )
+    assert second.status_code == 409, second.text
+    assert second.json()["error"]["code"] == "duplicate_registration"
 
 
 def test_student_pass_rejects_duplicate_email(client: TestClient, demo_store):
@@ -136,7 +177,10 @@ def test_student_pass_rejects_duplicate_email(client: TestClient, demo_store):
     }
     first = client.post("/api/orders", json=payload)
     assert first.status_code == 201, first.text
-    client.post("/api/payments/verify", json={"reference": first.json()["order"]["id"]})
+    client.post(
+        "/api/payments/verify",
+        json={"reference": first.json()["order"]["id"], "email": "dup@example.com"},
+    )
 
     second = client.post("/api/orders", json=payload)
     assert second.status_code == 409, second.text

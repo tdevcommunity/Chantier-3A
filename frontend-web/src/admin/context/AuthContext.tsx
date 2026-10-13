@@ -79,8 +79,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(res.user);
       return true;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Identifiants invalides';
-      error('Erreur de connexion', message);
+      error('Erreur de connexion', 'Identifiants incorrects.');
       return false;
     } finally {
       setIsLoading(false);

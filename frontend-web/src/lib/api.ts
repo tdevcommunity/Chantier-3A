@@ -216,6 +216,9 @@ export async function request<T = unknown>(path: string, options: RequestOptions
         if (response.status >= 500 || message === 'Internal Server Error' || message === 'Request failed') {
             message = 'Service billetterie temporairement indisponible.';
         }
+        if (response.status === 422) {
+            message = 'Requête invalide. Vérifiez les champs et réessayez.';
+        }
         const code = (typeof errShape?.code === 'string' && errShape.code) || `http_${response.status}`;
 
         if (response.status === 401 && !skipAuthRedirect) {
@@ -662,9 +665,10 @@ export const payments = {
             reference,
             ...(veltoTransactionId ? { velto_transaction_id: veltoTransactionId } : {}),
         }),
-    verify: (reference: string, veltoTransactionId?: string) =>
+    verify: (reference: string, email: string, veltoTransactionId?: string) =>
         post<VerifyPaymentResponse>('/payments/verify', {
             reference,
+            email: email.trim(),
             ...(veltoTransactionId ? { velto_transaction_id: veltoTransactionId } : {}),
         }),
     abandon: (reference: string, email: string) =>

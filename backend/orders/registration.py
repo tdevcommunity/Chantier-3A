@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from auth.email_canonical import InvalidEmail as CanonInvalidEmail
+from auth.email_canonical import canonical_email
 from events.passes import PASS_TIER_STUDENT, PASS_TIER_VIP
 from store import ticket_types as tt_repo
 
@@ -148,7 +150,10 @@ def normalize_registration(
             required=required,
         )
 
-    email = email.strip().lower()
+    try:
+        email = canonical_email(email)
+    except CanonInvalidEmail as exc:
+        raise RegistrationError("Adresse e-mail invalide.") from exc
     first_name = first_name.strip()
     last_name = last_name.strip()
     legacy_name = legacy_name.strip()
@@ -196,7 +201,11 @@ def normalize_full_form(
     cleaned["country"] = _str(form.get("country"))
     cleaned["city"] = _str(form.get("city"))
     cleaned["phone"] = _str(form.get("phone"))
-    cleaned["email"] = _str(form.get("email") or email).lower()
+    raw_email = _str(form.get("email") or email)
+    try:
+        cleaned["email"] = canonical_email(raw_email) if raw_email else ""
+    except CanonInvalidEmail as exc:
+        raise RegistrationError("Adresse e-mail invalide.") from exc
     cleaned["situation"] = _choice(form.get("situation"), SITUATIONS)
     cleaned["activity_domain"] = _str(form.get("activity_domain"))
     cleaned["school_program"] = _str(form.get("school_program") or school_name)
@@ -281,10 +290,22 @@ def normalize_full_form(
     )
 
 
+def safe_holder_name(name: str) -> str:
+    """Name embedded in ticket capability tokens (no markup)."""
+    cleaned = _sanitize_plain_text(name)
+    return (cleaned[:MAX_NAME] if cleaned else "Participant")
+
+
+def _sanitize_plain_text(value: str) -> str:
+    """Reject markup and control chars in user-provided text fields."""
+    cleaned = value.replace("\x00", "").replace("<", "").replace(">", "")
+    return cleaned.strip()
+
+
 def _str(value: Any) -> str:
     if value is None:
         return ""
-    return str(value).strip()
+    return _sanitize_plain_text(str(value))
 
 
 def _choice(value: Any, allowed: tuple[str, ...]) -> str:

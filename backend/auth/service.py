@@ -88,11 +88,14 @@ class InvalidInvite(AuthError):
 
 
 def _normalize_email(email: str) -> str:
-    """Internal: normalize email."""
-    e = email.strip().lower()
-    if not e or "@" not in e or e.startswith("@") or e.endswith("@"):
-        raise InvalidEmail()
-    return e
+    """Internal: normalize email (canonical form for auth and orders)."""
+    from auth.email_canonical import InvalidEmail as CanonInvalid
+    from auth.email_canonical import canonical_email
+
+    try:
+        return canonical_email(email)
+    except CanonInvalid as exc:
+        raise InvalidEmail() from exc
 
 
 def _new_token() -> tuple[str, str]:

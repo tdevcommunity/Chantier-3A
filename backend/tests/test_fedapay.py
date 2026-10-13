@@ -238,13 +238,18 @@ def test_full_flow_widget_verify_settles_once(demo_store):
     assert created["payment"]["client_token"]
     assert created["payment"]["redirect_url"] == ""
 
-    pending = client.post("/api/payments/verify", json={"reference": order_id})
+    buyer = "buyer@example.com"
+    pending = client.post(
+        "/api/payments/verify",
+        json={"reference": order_id, "email": buyer},
+    )
     assert pending.status_code == 402  # widget closed / not paid yet: no ticket
 
     fake.approve(order_id)
-    ok = client.post("/api/payments/verify", json={"reference": order_id})
+    ok = client.post("/api/payments/verify", json={"reference": order_id, "email": buyer})
     assert ok.status_code == 200 and len(ok.json()["tickets"]) == 1
-    again = client.post("/api/payments/verify", json={"reference": order_id})
+    assert "registration" not in ok.json()["order"]
+    again = client.post("/api/payments/verify", json={"reference": order_id, "email": buyer})
     assert again.status_code == 200 and len(again.json()["tickets"]) == 1
 
 

@@ -59,7 +59,10 @@ def test_guest_checkout_and_lookup(client: TestClient, demo_store):
     order_id = order.json()["order"]["id"]
     assert order.json()["order"]["total_minor"] == 15000
 
-    verify = client.post("/api/payments/verify", json={"reference": order_id})
+    verify = client.post(
+        "/api/payments/verify",
+        json={"reference": order_id, "email": "guest@example.com"},
+    )
     assert verify.status_code == 200, verify.text
     assert len(verify.json()["tickets"]) == 1
 

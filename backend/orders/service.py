@@ -48,6 +48,7 @@ ErrOrderNotSettleable = OrdersError("orders: order cannot be settled from its cu
 ErrOrderNotPending = OrdersError("orders: order is not pending")
 ErrRegistrationIncomplete = OrdersError("orders: incomplete pass registration")
 ErrDuplicateBuyerEmail = OrdersError("orders: buyer email already registered for this event")
+ErrOrderNotRevokable = OrdersError("orders: order attendance cannot be revoked from its current status")
 
 
 @dataclass
@@ -313,6 +314,25 @@ class OrdersService:
             raise ErrOrderNotPending
         fresh = orders_repo.get_order_by_id(self._store, order_id)
         return self._to_view(fresh, None)
+
+    def revoke_attendance(self, order_id: str, *, actor_email: str = "") -> tuple[OrderView, list[TicketView]]:
+        """Void all valid tickets for a paid order (admin retrait inscrit)."""
+        import logging
+
+        ord_row = orders_repo.get_order_by_id(self._store, order_id)
+        if ord_row.status != "paid":
+            raise ErrOrderNotRevokable
+        now = datetime.now(timezone.utc)
+        tickets_repo.void_valid_tickets_for_order(self._store, order_id, now)
+        if actor_email:
+            logging.getLogger(__name__).info(
+                "revoke_attendance order_id=%s actor=%s",
+                order_id,
+                actor_email,
+            )
+        fresh = orders_repo.get_order_by_id(self._store, order_id)
+        tickets = tickets_repo.list_tickets_for_order(self._store, order_id)
+        return self._to_view(fresh, None), [self._ticket_view(t) for t in tickets]
 
     def settle(self, result: pt.Result) -> tuple[OrderView, list[TicketView]]:
         """Settle on ``OrdersService``."""

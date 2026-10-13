@@ -22,7 +22,10 @@ export const exportsService = {
   },
 
   async exportParticipantsPdf(eventId: string | null) {
-    const { data } = await participantsService.getAll({ limit: 100000 }, eventId);
+    const { data } = await participantsService.getAll(
+      { includeRevoked: true, paginate: false },
+      eventId,
+    );
     await downloadParticipantsRegistrationPdf(data);
   },
 

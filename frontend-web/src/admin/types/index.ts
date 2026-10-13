@@ -286,6 +286,10 @@ export interface Participant {
   goodies_details?: string;
   admitted: boolean;
   registration_form: Record<string, unknown>;
+  /** Statut de chaque billet lié à la commande. */
+  ticket_statuses: TicketStatus[];
+  /** Tous les billets sont void ou refunded. */
+  is_revoked: boolean;
 }
 
 export interface DashboardKPIData {

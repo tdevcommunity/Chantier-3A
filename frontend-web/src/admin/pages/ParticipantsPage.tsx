@@ -32,6 +32,7 @@ export const ParticipantsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
+  const [revokedFilter, setRevokedFilter] = useState<'active' | 'all'>('active');
   const [page, setPage] = useState(1);
   const limit = 10;
 
@@ -46,6 +47,7 @@ export const ParticipantsPage: React.FC = () => {
           pass_tier: tierFilter,
           page,
           limit,
+          includeRevoked: revokedFilter === 'all',
         },
         eventId,
       );
@@ -61,7 +63,7 @@ export const ParticipantsPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [searchTerm, statusFilter, tierFilter, page, eventId]);
+  }, [searchTerm, statusFilter, tierFilter, revokedFilter, page, eventId]);
 
   const handleExportCsv = async () => {
     try {
@@ -124,7 +126,7 @@ export const ParticipantsPage: React.FC = () => {
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="search"
-              placeholder="Rechercher par nom ou e-mail…"
+              placeholder="Nom, e-mail, ville, établissement, motivations…"
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -164,6 +166,18 @@ export const ParticipantsPage: React.FC = () => {
             <option value="vip">Nexus Night</option>
             <option value="standard">Standard</option>
           </select>
+
+          <select
+            value={revokedFilter}
+            onChange={(e) => {
+              setRevokedFilter(e.target.value as 'active' | 'all');
+              setPage(1);
+            }}
+            className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+          >
+            <option value="active">Inscrits actifs</option>
+            <option value="all">Inclure retirés</option>
+          </select>
         </div>
       </div>
 
@@ -180,6 +194,7 @@ export const ParticipantsPage: React.FC = () => {
             setSearchTerm('');
             setStatusFilter('all');
             setTierFilter('all');
+            setRevokedFilter('active');
           }}
         />
       ) : (
@@ -219,7 +234,14 @@ export const ParticipantsPage: React.FC = () => {
                     <td className="py-4 px-5 font-mono text-[11px] text-slate-500">{p.serial}</td>
                     <td className="py-4 px-5 text-slate-600">{p.city || '—'}</td>
                     <td className="py-4 px-5">
-                      <StatusBadge status={p.order_status} type="order" />
+                      <div className="flex flex-col gap-1 items-start">
+                        <StatusBadge status={p.order_status} type="order" />
+                        {p.is_revoked ? (
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md">
+                            Retiré
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="py-4 px-5 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">

@@ -56,7 +56,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
       setLoading(true);
       try {
         const [p, o, t] = await Promise.all([
-          participantsService.getAll({ search: query, limit: 5 }, eventId),
+          participantsService.getAll({ search: query, limit: 8, includeRevoked: true }, eventId),
           ordersService.getAll({ search: query, limit: 5 }, eventId),
           ticketsService.getAll({ search: query }, eventId),
         ]);

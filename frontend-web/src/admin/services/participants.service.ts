@@ -1,6 +1,7 @@
 import { apiFetch } from './api';
-import { Participant, OrderStatus, PassTier } from '../types';
+import { Participant, OrderStatus, PassTier, TicketStatus } from '../types';
 import { requireEventId } from '../context/EventContext';
+import { participantMatchesSearch } from '../lib/participant-search-haystack';
 
 export interface ParticipantFilterParams {
   search?: string;
@@ -9,6 +10,10 @@ export interface ParticipantFilterParams {
   nexus?: boolean;
   page?: number;
   limit?: number;
+  /** Inclure les inscrits dont les billets sont invalidés (retrait). Défaut : false. */
+  includeRevoked?: boolean;
+  /** Désactive la pagination (Insights, recherche par id). */
+  paginate?: boolean;
 }
 
 type OrderRegistrationApi = {
@@ -44,22 +49,10 @@ function parseRegistration(order: Record<string, unknown>): OrderRegistrationApi
   return { ...reg, form };
 }
 
-function participantSearchHaystack(p: Participant): string {
-  return [
-    p.name,
-    p.first_name,
-    p.last_name,
-    p.email,
-    p.phone,
-    p.city,
-    p.serial,
-    p.pass_name,
-    String(p.registration_form.phone ?? ''),
-    String(p.registration_form.city ?? ''),
-    String(p.registration_form.email ?? ''),
-  ]
-    .join(' ')
-    .toLowerCase();
+function ticketStatusFromRow(t: Record<string, unknown>): TicketStatus {
+  const s = String(t.status || 'valid');
+  if (s === 'void' || s === 'refunded') return s;
+  return 'valid';
 }
 
 export const participantsService = {
@@ -93,6 +86,9 @@ export const participantsService = {
       const form = reg.form || {};
       const passNames = [...new Set(tickets.map((t) => String(t.ticket_type_name || t.pass_type || 'Pass Festival')))];
       const serials = tickets.map((t) => String(t.serial || '')).filter(Boolean);
+      const ticketStatuses = tickets.map((t) => ticketStatusFromRow(t));
+      const isRevoked =
+        ticketStatuses.length > 0 && ticketStatuses.every((s) => s !== 'valid');
       const primary = tickets[0]!;
       const passName = passNames.join(' + ');
       const firstName = String(form.first_name || reg.first_name || primary.first_name || '');
@@ -126,14 +122,20 @@ export const participantsService = {
         goodies_details: undefined,
         admitted: tickets.some((t) => Boolean(t.admitted)),
         registration_form: form,
+        ticket_statuses: ticketStatuses,
+        is_revoked: isRevoked,
       });
     }
 
     participants.sort((a, b) => b.issued_at.localeCompare(a.issued_at));
 
+    const includeRevoked = params.includeRevoked === true;
+    if (!includeRevoked) {
+      participants = participants.filter((p) => !p.is_revoked);
+    }
+
     if (params.search?.trim()) {
-      const q = params.search.trim().toLowerCase();
-      participants = participants.filter((p) => participantSearchHaystack(p).includes(q));
+      participants = participants.filter((p) => participantMatchesSearch(p, params.search!));
     }
     if (params.status && params.status !== 'all') {
       participants = participants.filter((p) => p.order_status === params.status);
@@ -146,6 +148,9 @@ export const participantsService = {
     }
 
     const total = participants.length;
+    if (params.paginate === false) {
+      return { data: participants, total };
+    }
     const page = params.page || 1;
     const limit = params.limit || 10;
     const data = participants.slice((page - 1) * limit, page * limit);
@@ -153,7 +158,7 @@ export const participantsService = {
   },
 
   async getById(participantId: string, eventId?: string | null): Promise<Participant | null> {
-    const all = await this.getAll({ limit: 100000 }, eventId);
+    const all = await this.getAll({ includeRevoked: true, paginate: false }, eventId);
     return (
       all.data.find(
         (p) =>

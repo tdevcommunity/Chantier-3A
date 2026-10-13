@@ -7,6 +7,7 @@ import {
   Calendar,
   Send,
   ShieldCheck,
+  UserX,
 } from 'lucide-react';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { participantsService } from '../services/participants.service';
@@ -29,6 +30,8 @@ export const ParticipantDetailPage: React.FC = () => {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [resending, setResending] = useState(false);
+  const [revokeOpen, setRevokeOpen] = useState(false);
+  const [revoking, setRevoking] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -50,6 +53,24 @@ export const ParticipantDetailPage: React.FC = () => {
       order?.registration?.form ||
       {},
   );
+
+  const handleRevoke = async () => {
+    if (!participant?.order_id) return;
+    setRevoking(true);
+    try {
+      await ordersService.revokeAttendance(participant.order_id);
+      success(
+        'Inscrit retiré',
+        'Les billets sont invalidés au scan. Les données restent visibles dans les exports CSV serveur.',
+      );
+      navigate('/participants');
+    } catch (err) {
+      toastError('Retrait impossible', toUserFacingApiMessage(err, 'Réessayez dans un instant.'));
+    } finally {
+      setRevoking(false);
+      setRevokeOpen(false);
+    }
+  };
 
   const handleResend = async () => {
     if (!participant?.ticket_id) return;
@@ -108,8 +129,13 @@ export const ParticipantDetailPage: React.FC = () => {
               <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
                 <Mail className="w-3.5 h-3.5" /> {participant.email}
               </p>
-              <div className="mt-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <StatusBadge status={participant.order_status} type="order" />
+                {participant.is_revoked ? (
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md">
+                    Retiré (billets invalidés)
+                  </span>
+                ) : null}
               </div>
             </div>
           </div>
@@ -149,12 +175,23 @@ export const ParticipantDetailPage: React.FC = () => {
 
           <button
             onClick={() => void handleResend()}
-            disabled={resending}
+            disabled={resending || participant.is_revoked}
             className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-60 font-semibold text-xs transition-colors"
           >
             <Send className="w-4 h-4" />
             {resending ? 'Envoi…' : 'Renvoyer le billet par e-mail'}
           </button>
+
+          {participant.order_status === 'paid' && !participant.is_revoked ? (
+            <button
+              type="button"
+              onClick={() => setRevokeOpen(true)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold text-xs transition-colors"
+            >
+              <UserX className="w-4 h-4" />
+              Retirer l&apos;inscrit
+            </button>
+          ) : null}
         </div>
 
         <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
@@ -191,6 +228,43 @@ export const ParticipantDetailPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {revokeOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-slate-100"
+            role="dialog"
+            aria-labelledby="revoke-title"
+          >
+            <h2 id="revoke-title" className="text-lg font-bold text-slate-900">
+              Retirer cet inscrit ?
+            </h2>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+              Tous les billets valides seront invalidés : le QR ne passera plus au scan. L&apos;inscription
+              disparaîtra de la liste par défaut et des Insights. Les exports CSV complets côté serveur
+              conservent l&apos;historique.
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRevokeOpen(false)}
+                disabled={revoking}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleRevoke()}
+                disabled={revoking}
+                className="px-4 py-2 rounded-xl bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 disabled:opacity-60"
+              >
+                {revoking ? 'Retrait…' : 'Confirmer le retrait'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

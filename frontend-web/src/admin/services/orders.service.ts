@@ -67,4 +67,8 @@ export const ordersService = {
   async markFailed(orderId: string): Promise<{ order: Order }> {
     return apiFetch(`/orders/${orderId}/mark-failed`, { method: 'POST' });
   },
+
+  async revokeAttendance(orderId: string): Promise<{ order: Order; tickets: unknown[] }> {
+    return apiFetch(`/orders/${orderId}/revoke-attendance`, { method: 'POST' });
+  },
 };

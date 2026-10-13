@@ -491,6 +491,25 @@ def mark_order_failed(order_id: str, state: AppState = Depends(require_user)):
     return _mark_order(order_id, state, paid=False)
 
 
+@router.post("/orders/{order_id}/revoke-attendance")
+def revoke_order_attendance(order_id: str, state: AppState = Depends(require_user)):
+    """Admin: void all valid tickets for a paid order (retrait inscrit, QR invalidé)."""
+    try:
+        ord = state.services.orders.get(order_id)
+    except NotFoundError:
+        return json_error(404, "not_found", "order not found")
+    if not rbac.can_manage_event(state.store, state.current_user.id, ord.event_id, rbac.ROLE_ADMIN):
+        return json_error(403, "forbidden", "you are not an admin/owner of this event's org")
+    try:
+        updated, tickets = state.services.orders.revoke_attendance(
+            order_id,
+            actor_email=state.current_user.email,
+        )
+    except OrdersError:
+        return json_error(409, "conflict", "order attendance cannot be revoked from its current status")
+    return {"order": _order_json(updated), "tickets": _tickets_json(tickets)}
+
+
 def _mark_order(order_id: str, state: AppState, *, paid: bool):
     """Internal: mark order."""
     try:

@@ -7,6 +7,7 @@ import { AdminLayout } from './components/layout/AdminLayout';
 
 import { DashboardPage } from './pages/DashboardPage';
 import { ParticipantsPage } from './pages/ParticipantsPage';
+import { InsightsPage } from './pages/InsightsPage';
 import { ParticipantDetailPage } from './pages/ParticipantDetailPage';
 import { TicketsPage } from './pages/TicketsPage';
 import { TicketTypesPage } from './pages/TicketTypesPage';
@@ -101,6 +102,7 @@ export const AdminApp: React.FC = () => {
               <Route path="event" element={<EventSettingsPage />} />
               <Route path="participants" element={<ParticipantsPage />} />
               <Route path="participants/:id" element={<ParticipantDetailPage />} />
+              <Route path="insights" element={<InsightsPage />} />
               <Route path="orders" element={<OrdersPage />} />
               <Route path="orders/:id" element={<OrderDetailPage />} />
               <Route path="tickets" element={<TicketsPage />} />

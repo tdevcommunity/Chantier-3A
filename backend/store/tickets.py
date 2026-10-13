@@ -84,6 +84,20 @@ def list_tickets_for_order(st: Store, order_id: str) -> list[Ticket]:
     return [_scan(r) for r in rows]
 
 
+def void_valid_tickets_for_order(st: Store, order_id: str, voided_at: datetime) -> int:
+    """Mark all valid tickets for an order as void. Returns number of rows updated."""
+    from store.timeutil import time_to_text
+
+    return st.execute_rowcount(
+        """
+        UPDATE tickets
+        SET status = 'void', voided_at = ?
+        WHERE order_id = ? AND status = 'valid'
+        """,
+        (time_to_text(voided_at), order_id),
+    )
+
+
 def list_tickets_for_user(st: Store, user_id: str) -> list[Ticket]:
     """List tickets for user."""
     rows = st.fetchall(

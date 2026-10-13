@@ -11,6 +11,7 @@ import {
   ShoppingCart,
   Calendar,
   UserCog,
+  BarChart3,
   ChevronLeft,
   ChevronRight,
   type LucideIcon,
@@ -37,6 +38,7 @@ type NavItem = { name: string; path: string; icon: LucideIcon };
 const NAV_ITEMS: NavItem[] = [
   { name: 'Vue d’ensemble', path: 'dashboard', icon: LayoutDashboard },
   { name: 'Inscrits', path: 'participants', icon: Users },
+  { name: 'Insights', path: 'insights', icon: BarChart3 },
   { name: 'Commandes', path: 'orders', icon: ShoppingCart },
   { name: 'Billets', path: 'tickets', icon: Ticket },
   { name: 'Types de pass', path: 'ticket-types', icon: Tags },

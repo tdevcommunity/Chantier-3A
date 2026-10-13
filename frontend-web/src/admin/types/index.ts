@@ -3,7 +3,12 @@
 
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled';
 export type TicketStatus = 'valid' | 'void' | 'refunded';
-export type AdmissionResult = 'admitted' | 'duplicate' | 'invalid' | 'wrong_event';
+export type AdmissionResult =
+  | 'admitted'
+  | 'duplicate'
+  | 'invalid'
+  | 'wrong_event'
+  | 'not_scanned';
 export type EventStatus = 'draft' | 'published' | 'cancelled';
 export type ProductKind = 'ticket' | 'goodie' | 'option';
 export type PassTier = 'student' | 'standard' | 'vip';

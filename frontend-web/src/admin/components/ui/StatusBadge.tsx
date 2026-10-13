@@ -74,6 +74,11 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
       bgClass = 'bg-slate-100 text-slate-700 border-slate-300';
       IconComponent = <Clock className="w-3.5 h-3.5 text-slate-500" />;
       break;
+    case 'not_scanned':
+      label = 'Non composté';
+      bgClass = 'bg-sky-50 text-sky-700 border-sky-200';
+      IconComponent = <Clock className="w-3.5 h-3.5 text-sky-600" />;
+      break;
 
     // Avertissement / Doublon / Mauvais événement
     case 'duplicate':

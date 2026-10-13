@@ -18,7 +18,7 @@ import { formatMoney, formatDateTime } from '../lib/utils';
 import { registrationFormDisplayRows } from '@/lib/registration-form';
 import { Participant, Order } from '../types';
 import { useEvent } from '../context/EventContext';
-import { toUserFacingApiMessage } from '../lib/user-facing-api-error';
+import { adminUserMessage } from '../lib/admin-user-message';
 
 export const ParticipantDetailPage: React.FC = () => {
   const { eventId } = useEvent();
@@ -65,7 +65,7 @@ export const ParticipantDetailPage: React.FC = () => {
       );
       navigate('/participants');
     } catch (err) {
-      toastError('Retrait impossible', toUserFacingApiMessage(err, 'Réessayez dans un instant.'));
+      toastError('Retrait impossible', adminUserMessage(err, 'Réessayez dans un instant.'));
     } finally {
       setRevoking(false);
       setRevokeOpen(false);
@@ -79,7 +79,7 @@ export const ParticipantDetailPage: React.FC = () => {
       await ticketsService.resendEmail(participant.ticket_id);
       success('E-mail envoyé', `Le billet a été renvoyé à ${participant.email}.`);
     } catch (err) {
-      toastError('Envoi impossible', toUserFacingApiMessage(err, 'Réessayez dans un instant.'));
+      toastError('Envoi impossible', adminUserMessage(err, 'Réessayez dans un instant.'));
     } finally {
       setResending(false);
     }

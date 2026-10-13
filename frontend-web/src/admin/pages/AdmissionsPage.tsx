@@ -42,7 +42,7 @@ export const AdmissionsPage: React.FC = () => {
         eventId,
       );
       setAdmissions(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(adminUserMessage(err, 'Impossible de récupérer les admissions.'));
     } finally {
       setLoading(false);
@@ -130,7 +130,7 @@ export const AdmissionsPage: React.FC = () => {
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Rechercher par billet, participant, portique..."
+            placeholder="Nom, e-mail, n° série, portique, terminal…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all"

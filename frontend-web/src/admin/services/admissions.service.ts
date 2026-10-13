@@ -1,6 +1,10 @@
 import { apiFetch } from './api';
 import { Admission, AdmissionResult } from '../types';
 import { requireEventId } from '../context/EventContext';
+import { admissionMatchesSearch } from '../lib/admission-search';
+import { logAdminApiDiagnostic } from '../lib/user-facing-api-error';
+import { participantMatchesSearch } from '../lib/participant-search-haystack';
+import { participantsService } from './participants.service';
 
 export const admissionsService = {
   async getAll(
@@ -82,18 +86,65 @@ export const admissionsService = {
       (a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime(),
     );
 
+    const searchQuery = params.search?.trim() ?? '';
+    const participantsByTicket = new Map<string, import('../types').Participant>();
+    let allParticipants: import('../types').Participant[] = [];
+
+    if (searchQuery) {
+      try {
+        const res = await participantsService.getAll(
+          { paginate: false, includeRevoked: true },
+          id,
+        );
+        allParticipants = res.data;
+        for (const p of allParticipants) {
+          for (const ticketId of p.ticket_ids) {
+            participantsByTicket.set(ticketId, p);
+          }
+          participantsByTicket.set(p.ticket_id, p);
+        }
+      } catch (err) {
+        logAdminApiDiagnostic('admissions-search-participants', err);
+      }
+    }
+
     let result = admissions;
+    if (searchQuery) {
+      result = result.filter((a) =>
+        admissionMatchesSearch(a, searchQuery, participantsByTicket.get(a.ticket_id)),
+      );
+
+      const listedTickets = new Set(result.map((a) => a.ticket_id));
+      for (const p of allParticipants) {
+        if (!participantMatchesSearch(p, searchQuery)) continue;
+        const alreadyListed = p.ticket_ids.some((tid) => listedTickets.has(tid));
+        if (alreadyListed) continue;
+        if (p.admitted) continue;
+
+        result.push({
+          id: `not-scanned-${p.id}`,
+          ticket_id: p.ticket_id,
+          event_id: id,
+          gate_id: '—',
+          scanned_by: null,
+          device_id: '—',
+          scanned_at: p.issued_at || new Date(0).toISOString(),
+          result: 'not_scanned',
+          note: 'Inscrit correspondant — aucun scan enregistré au portique',
+          holder_name: p.name,
+          serial: p.serial,
+          pass_name: p.pass_name,
+        });
+        listedTickets.add(p.ticket_id);
+      }
+
+      result.sort(
+        (a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime(),
+      );
+    }
+
     if (params.result && params.result !== 'all') {
       result = result.filter((a) => a.result === params.result);
-    }
-    if (params.search) {
-      const q = params.search.toLowerCase();
-      result = result.filter(
-        (a) =>
-          (a.holder_name || '').toLowerCase().includes(q) ||
-          (a.serial || '').toLowerCase().includes(q) ||
-          (a.gate_id || '').toLowerCase().includes(q),
-      );
     }
     return result;
   },

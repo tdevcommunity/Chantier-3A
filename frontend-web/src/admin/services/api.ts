@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '@/lib/api';
-import { logAdminApiDiagnostic, toUserFacingApiMessage } from '../lib/user-facing-api-error';
+import { logAdminApiDiagnostic } from '../lib/user-facing-api-error';
 
 export const API_URL = API_BASE_URL;
 
@@ -94,7 +94,7 @@ class ApiClient {
       });
     } catch (err) {
       logAdminApiDiagnostic('network', err);
-      throw new Error('Connexion réseau impossible.');
+      throw new Error('network');
     }
 
     if (response.status === 401 && !retried && !cleanEndpoint.startsWith('/auth/')) {
@@ -106,23 +106,19 @@ class ApiClient {
     }
 
     if (!response.ok) {
-      let errorMsg = `Erreur HTTP ${response.status}`;
       try {
-        const errorJson = await response.json();
-        const detail =
-          errorJson.detail ||
-          errorJson.error?.message ||
-          errorJson.message;
-        if (detail) {
-          errorMsg = typeof detail === 'string' ? detail : JSON.stringify(detail);
-        }
+        await response.json();
       } catch {
-        // pas de corps json
+        // corps absent ou non JSON — détail loggé côté diagnostic si besoin
       }
+      logAdminApiDiagnostic('http', { status: response.status, endpoint: cleanEndpoint });
       if (response.status >= 500) {
-        throw new Error('Service billetterie temporairement indisponible.');
+        throw new Error('service_unavailable');
       }
-      throw new Error(toUserFacingApiMessage(new Error(errorMsg), 'Requête impossible.'));
+      if (response.status === 403) {
+        throw new Error('forbidden');
+      }
+      throw new Error('request_failed');
     }
 
     if (response.status === 204) {

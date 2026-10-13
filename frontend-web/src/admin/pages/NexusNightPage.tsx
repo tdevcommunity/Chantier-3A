@@ -8,11 +8,23 @@ import { exportsService } from '../services/exports.service';
 import { formatDateTime, formatMoney } from '../lib/utils';
 import { Participant } from '../types';
 import { useEvent } from '../context/EventContext';
+import { adminUserMessage } from '../lib/admin-user-message';
 
 export const NexusNightPage: React.FC = () => {
   const { eventId } = useEvent();
   const [participants, setParticipants] = useState<Participant[]>([]); const [loading, setLoading] = useState(true); const [failure, setFailure] = useState<string | null>(null);
-  const load = async () => { try { setLoading(true); setFailure(null); const result = await participantsService.getAll({ nexus: true, limit: 10000 }, eventId); setParticipants(result.data); } catch (error: any) { setFailure(error.message || 'Impossible de lire les données Nexus Night.'); } finally { setLoading(false); } };
+  const load = async () => {
+    try {
+      setLoading(true);
+      setFailure(null);
+      const result = await participantsService.getAll({ nexus: true, limit: 10000 }, eventId);
+      setParticipants(result.data);
+    } catch (error: unknown) {
+      setFailure(adminUserMessage(error, 'Impossible de lire les données Nexus Night.'));
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => { load(); }, [eventId]);
   const paid = participants.filter((participant) => participant.order_status === 'paid');
   const admitted = participants.filter((participant) => participant.admitted);

@@ -252,9 +252,13 @@ Reponse : `{ "org_id", "role" }`
 
 ### PATCH `/api/orgs/{org_id}/members/{user_id}`
 
-Auth : owner.
+Auth : admin+ (meme regles de rang que les invites).
 
 Corps : `{ "role": "owner"|"admin"|"scanner" }`
+
+### DELETE `/api/orgs/{org_id}/members/{user_id}`
+
+Auth : admin+. Retire le membre de l'organisation (204). Interdit : se retirer soi-meme, retirer un role superieur au votre, retirer le dernier owner.
 
 ### GET `/api/orgs/{org_id}/bank-account`
 

@@ -8,6 +8,8 @@ export const adminMessages = {
   genericRetry: 'Réessayez dans un instant.',
   actionDenied: 'Action non autorisée.',
   roleChangeDenied: 'Vous ne pouvez pas modifier ce rôle.',
+  memberRemoveDenied: 'Vous ne pouvez pas retirer ce membre.',
+  memberRemoved: 'Membre retiré de l’équipe.',
   inviteFailed: 'Invitation impossible.',
   inviteCreatedEmail: (email: string) => `E-mail envoyé à ${email}.`,
   inviteCreatedClipboard:
@@ -28,6 +30,9 @@ const ENGLISH_API_SNIPPETS: Record<string, string> = {
   'you cannot': adminMessages.roleChangeDenied,
   'invalid role': adminMessages.roleChangeDenied,
   'member not found': adminMessages.genericRetry,
+  'you cannot remove': adminMessages.memberRemoveDenied,
+  'remove yourself': adminMessages.memberRemoveDenied,
+  'last owner': adminMessages.memberRemoveDenied,
   conflict: adminMessages.passDeleteBlocked,
   'ticket type has sales': adminMessages.passDeleteBlocked,
   request_failed: adminMessages.genericRetry,

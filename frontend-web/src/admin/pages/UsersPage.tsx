@@ -97,6 +97,21 @@ export const UsersPage: React.FC = () => {
     }
   };
 
+  const removeMember = async (member: OrganizationMember) => {
+    if (!orgId) return;
+    const label = member.user?.email || member.user?.name || 'ce membre';
+    if (!window.confirm(`Retirer ${label} de l’équipe ? Cette personne n’aura plus accès à l’administration.`)) {
+      return;
+    }
+    try {
+      await usersService.removeMember(orgId, member.user_id);
+      success('Équipe', adminMessages.memberRemoved);
+      loadData();
+    } catch (err: unknown) {
+      toastError('Retrait', adminUserMessage(err, adminMessages.memberRemoveDenied));
+    }
+  };
+
   const canEditMember = (member: OrganizationMember): boolean => {
     if (!myRole) return false;
     if (member.user_id === user?.id) return false;
@@ -169,6 +184,7 @@ export const UsersPage: React.FC = () => {
                   <th className="py-3 px-6">Membre</th>
                   <th className="py-3 px-6">E-mail</th>
                   <th className="py-3 px-6">Rôle</th>
+                  <th className="py-3 px-6 w-16" aria-label="Actions" />
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -192,6 +208,19 @@ export const UsersPage: React.FC = () => {
                       ) : (
                         <span className="font-semibold capitalize text-slate-700">{m.role}</span>
                       )}
+                    </td>
+                    <td className="py-3 px-6 text-right">
+                      {canEditMember(m) ? (
+                        <button
+                          type="button"
+                          onClick={() => removeMember(m)}
+                          className="text-rose-600 hover:bg-rose-50 p-2 rounded-lg"
+                          title="Retirer de l’équipe"
+                          aria-label={`Retirer ${m.user?.email ?? m.user?.name ?? 'membre'}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

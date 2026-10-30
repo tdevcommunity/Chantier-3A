@@ -545,6 +545,7 @@ export const orgMembers = {
      * — see docs/API.md.
      */
     updateRole: (orgId: string, userId: string, role: string) => patch(`/orgs/${orgId}/members/${userId}`, { role }),
+    remove: (orgId: string, userId: string) => del(`/orgs/${orgId}/members/${userId}`),
 };
 
 // ---------------------------------------------------------------------------

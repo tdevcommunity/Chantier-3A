@@ -132,6 +132,34 @@ def patch_member(org_id: str, user_id: str, body: dict, state: AppState = Depend
     return {"ok": True}
 
 
+@router.delete("/orgs/{org_id}/members/{user_id}", status_code=204)
+def delete_member(org_id: str, user_id: str, state: AppState = Depends(require_user)):
+    """Remove a member from the org (admin+); rank rules match PATCH member role."""
+    from fastapi import Response
+
+    actor_id = state.current_user.id
+    if not rbac.can_manage_org(state.store, actor_id, org_id, rbac.ROLE_ADMIN):
+        return json_error(403, "forbidden", "you are not an admin/owner of this org")
+    if actor_id == user_id:
+        return json_error(403, "forbidden", "you cannot remove yourself from the organization")
+    try:
+        actor_role = orgs_repo.get_org_member_role(state.store, org_id, actor_id)
+        target_role = orgs_repo.get_org_member_role(state.store, org_id, user_id)
+    except NotFoundError:
+        return json_error(404, "not_found", "member not found")
+    if rbac._RANK.get(target_role, 0) > rbac._RANK.get(actor_role, 0):
+        return json_error(403, "forbidden", "you cannot remove a member with a higher role than yours")
+    if target_role == rbac.ROLE_OWNER:
+        owners = [m for m in orgs_repo.list_org_members(state.store, org_id) if m.role == rbac.ROLE_OWNER]
+        if len(owners) <= 1:
+            return json_error(409, "conflict", "cannot remove the last owner from the organization")
+    state.store.execute(
+        "DELETE FROM org_members WHERE org_id = ? AND user_id = ?",
+        (org_id, user_id),
+    )
+    return Response(status_code=204)
+
+
 @router.get("/orgs/{org_id}/bank-account")
 def get_bank(org_id: str, state: AppState = Depends(require_user)):
     """Get bank."""

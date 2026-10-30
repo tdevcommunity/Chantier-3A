@@ -90,3 +90,37 @@ def test_admin_cannot_promote_to_owner(client: TestClient, demo_store):
         headers=admin_h,
     )
     assert denied.status_code == 403, denied.text
+
+
+def test_admin_can_remove_scanner(client: TestClient, demo_store):
+    owner_h = _signup(client, "owner-rm@example.com", "OwnerRm")
+    org_id = _org(client, owner_h, "rm-org-1")
+
+    assert (
+        client.post(
+            f"/api/orgs/{org_id}/invites",
+            json={"email": "admin-rm@example.com", "role": "admin"},
+            headers=owner_h,
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            f"/api/orgs/{org_id}/invites",
+            json={"email": "scan-rm@example.com", "role": "scanner"},
+            headers=owner_h,
+        ).status_code
+        == 201
+    )
+
+    members_before = client.get(f"/api/orgs/{org_id}/members", headers=owner_h)
+    scan_id = next(
+        m["user_id"] for m in members_before.json()["members"] if m["email"] == "scan-rm@example.com"
+    )
+
+    removed = client.delete(f"/api/orgs/{org_id}/members/{scan_id}", headers=owner_h)
+    assert removed.status_code == 204, removed.text
+
+    members = client.get(f"/api/orgs/{org_id}/members", headers=owner_h)
+    emails = [m["email"] for m in members.json()["members"]]
+    assert "scan-rm@example.com" not in emails

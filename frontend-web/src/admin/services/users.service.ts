@@ -56,4 +56,8 @@ export const usersService = {
       body: JSON.stringify({ role }),
     });
   },
+
+  async removeMember(orgId: string, userId: string): Promise<void> {
+    await apiFetch(`/orgs/${orgId}/members/${userId}`, { method: 'DELETE' });
+  },
 };

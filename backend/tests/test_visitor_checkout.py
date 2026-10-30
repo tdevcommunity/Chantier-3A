@@ -83,6 +83,12 @@ def test_site_config_visitor_flags(client: TestClient):
 
 
 def test_signup_with_invite_when_public_signup_off(client: TestClient, demo_store, monkeypatch):
+    sent: list = []
+
+    monkeypatch.setattr(
+        "notify.staff_invite_mail.send_staff_invite_email",
+        lambda config, ctx: sent.append(ctx),
+    )
     _store, cfg, _services, app = demo_store
     signup = client.post(
         "/api/auth/signup",
@@ -112,9 +118,30 @@ def test_signup_with_invite_when_public_signup_off(client: TestClient, demo_stor
     )
     assert blocked.status_code == 403
 
+    assert inv.json().get("account_created") is True
+    assert inv.json().get("default_password") == "Tfestiv2026"
+
+    import time
+
+    deadline = time.time() + 2.0
+    while time.time() < deadline and not sent:
+        time.sleep(0.05)
+    assert len(sent) == 1
+    assert sent[0].invited_email == "staff@example.com"
+    assert sent[0].default_password == "Tfestiv2026"
+    assert sent[0].account_created is True
+    assert sent[0].mobile_scanner is True
+    assert sent[0].login_url.endswith("/admin/scanner")
+
     joined = client.post(
-        "/api/auth/signup-with-invite",
-        json={"token": token, "password": "longpassword2", "name": "Staff"},
+        "/api/auth/login",
+        json={"email": "staff@example.com", "password": "Tfestiv2026"},
     )
     assert joined.status_code == 200, joined.text
     assert joined.json()["user"]["email"] == "staff@example.com"
+
+    already_used = client.post(
+        "/api/auth/signup-with-invite",
+        json={"token": token, "password": "longpassword2", "name": "Staff"},
+    )
+    assert already_used.status_code == 400

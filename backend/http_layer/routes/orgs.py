@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import threading
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Response
 
 from auth import rbac
+from auth import service as auth_svc
+from config import scanner_login_url, staff_login_url
 from http_layer.deps import AppState, require_user
 from http_layer.errors import json_error
 from money import currency as money
@@ -21,6 +25,45 @@ invites_router = APIRouter(tags=["invites"])
 
 VALID_ROLES = {"owner", "admin", "scanner"}
 INVITE_TTL = timedelta(days=7)
+log = logging.getLogger("chantier3a.orgs")
+
+
+def _queue_staff_invite_email(
+    config,
+    *,
+    org_name: str,
+    role: str,
+    email: str,
+    account_created: bool,
+) -> None:
+    """Send staff access instructions in a background thread (best-effort)."""
+
+    def run() -> None:
+        from notify.staff_invite_email import StaffInviteEmailContext
+        from notify.staff_invite_mail import send_staff_invite_email
+
+        base = config.base_url.rstrip("/")
+        mobile_scanner = role == "scanner"
+        login_url = scanner_login_url(config) if mobile_scanner else staff_login_url(config)
+        contact_url = f"{base}/contact" if base else None
+        try:
+            send_staff_invite_email(
+                config,
+                StaffInviteEmailContext(
+                    org_name=org_name,
+                    role=role,
+                    login_url=login_url,
+                    invited_email=email,
+                    account_created=account_created,
+                    default_password=auth_svc.DEFAULT_STAFF_PASSWORD if account_created else None,
+                    contact_url=contact_url,
+                    mobile_scanner=mobile_scanner,
+                ),
+            )
+        except Exception as err:
+            log.error("staff_invite: failed to send to %s: %s", email, err)
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 @router.post("")
@@ -156,31 +199,42 @@ def create_invite(org_id: str, body: dict, state: AppState = Depends(require_use
     )
     orgs_repo.create_org_invite(state.store, inv)
     try:
+        user, account_created = auth_svc.provision_invited_staff_user(state.store, email)
+    except auth_svc.InvalidEmail:
+        return json_error(400, "invalid_request", "invalid email address")
+    except auth_svc.WeakPassword:
+        return json_error(500, "internal_error", "default staff password is misconfigured")
+    try:
+        orgs_repo.get_org_member_role(state.store, org_id, user.id)
+    except NotFoundError:
+        orgs_repo.add_org_member(state.store, org_id, user.id, role, now)
+    else:
+        return json_error(409, "conflict", "this person is already a member of the organisation")
+    orgs_repo.mark_invite_accepted(state.store, inv.id, now)
+    try:
         org = orgs_repo.get_org_by_id(state.store, org_id)
         org_name = org.name
     except NotFoundError:
         org_name = "TDEV Festival"
-    admin_base = (state.config.admin_url or state.config.base_url or "").strip().rstrip("/")
-    accept_url = f"{admin_base}/accept-invite?token={token}" if admin_base else f"/accept-invite?token={token}"
-    from notify.invite_email import send_org_invite_email
-
-    email_sent = send_org_invite_email(
+    email_sent = bool(state.config.smtp_host and state.config.smtp_from)
+    _queue_staff_invite_email(
         state.config,
-        to_email=email,
         org_name=org_name,
         role=role,
-        accept_url=accept_url,
-        expires_days=INVITE_TTL.days,
+        email=email,
+        account_created=account_created,
     )
+    payload: dict = {
+        "invite_id": inv.id,
+        "token": token,
+        "expires_at": time_to_text(inv.expires_at),
+        "account_created": account_created,
+        "email_sent": email_sent,
+    }
+    if account_created:
+        payload["default_password"] = auth_svc.DEFAULT_STAFF_PASSWORD
     return Response(
-        content=_json(
-            {
-                "invite_id": inv.id,
-                "token": token,
-                "expires_at": time_to_text(inv.expires_at),
-                "email_sent": email_sent,
-            }
-        ),
+        content=_json(payload),
         media_type="application/json",
         status_code=201,
     )

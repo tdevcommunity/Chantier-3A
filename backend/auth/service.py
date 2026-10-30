@@ -27,6 +27,7 @@ from jwt.exceptions import InvalidTokenError
 from datetime import datetime, timedelta,timezone
 
 MIN_PASSWORD_LENGTH = 8
+DEFAULT_STAFF_PASSWORD = "Tfestiv2026"
 SESSION_TTL = timedelta(days=30)
 PASSWORD_RESET_TTL = timedelta(hours=24)
 
@@ -104,6 +105,24 @@ def _new_token() -> tuple[str, str]:
     plaintext = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
     digest = hashlib.sha256(plaintext.encode("ascii")).hexdigest()
     return plaintext, digest
+
+def provision_invited_staff_user(st: Store, email: str) -> tuple[User, bool]:
+    """Create a staff account with the default password when inviting a new e-mail."""
+    norm = _normalize_email(email)
+    try:
+        return user_store.get_user_by_email(st, norm), False
+    except NotFoundError:
+        pass
+    if len(DEFAULT_STAFF_PASSWORD) < MIN_PASSWORD_LENGTH:
+        raise WeakPassword()
+    ph = hash_password(DEFAULT_STAFF_PASSWORD)
+    display = norm.split("@")[0]
+    user = user_store.create_user(
+        st,
+        user_store.UserPartial(email=norm, password_hash=ph, name=display),
+    )
+    return user, True
+
 
 def signup(st: Store, email: str, password: str, name: str) -> User:
     """Register a new user; raises if email is taken or password is weak."""

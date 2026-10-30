@@ -238,7 +238,10 @@ Auth : Role admin+.
 Auth : Role admin+.
 
 Corps : `{ "email": "...", "role": "owner"|"admin"|"scanner" }`  
-Reponse `201` : `{ "invite_id", "token", "expires_at" }`
+Reponse `201` : `{ "invite_id", "token", "expires_at", "account_created", "default_password"? }`  
+Si l'e-mail n'a pas encore de compte staff, le serveur cree le compte avec le mot de passe initial `Tfestiv2026` (`default_password` present, `account_created: true`) et ajoute le membre a l'organisation. Connexion : `POST /api/auth/login` avec cet e-mail et ce mot de passe. Un compte deja existant conserve son mot de passe (`account_created: false`).
+
+Si SMTP est configure (`CHANTIER3A_SMTP_*`), un e-mail est envoye a l'adresse invitee avec le mot de passe initial le cas echeant. Lien selon le role : **scanner** -> application mobile (`CHANTIER3A_SCANNER_APP_URL` ou `CHANTIER3A_BASE_URL` + `CHANTIER3A_SCANNER_APP_PATH`, defaut `/admin/scanner`) ; **admin/owner** -> connexion web (`CHANTIER3A_STAFF_AUTH_PATH`, defaut `/acces-equipe`).
 
 ### POST `/api/invites/accept`
 

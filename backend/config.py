@@ -45,6 +45,9 @@ ENV_STOREFRONT_URL = "CHANTIER3A_STOREFRONT_URL"
 ENV_KEY_PASSPHRASE = "CHANTIER3A_KEY_PASSPHRASE"
 ENV_PUBLIC_SIGNUP = "CHANTIER3A_PUBLIC_SIGNUP"
 ENV_CONTACT_TO = "CHANTIER3A_CONTACT_TO"
+ENV_STAFF_AUTH_PATH = "CHANTIER3A_STAFF_AUTH_PATH"
+ENV_SCANNER_APP_PATH = "CHANTIER3A_SCANNER_APP_PATH"
+ENV_SCANNER_APP_URL = "CHANTIER3A_SCANNER_APP_URL"
 ENV_SECRET_KEY = "CHANTIER3A_SECRET_KEY"
 ENV_ALGORITHM = "CHANTIER3A_ALGORITHM"
 ENV_ACCESS_TOKEN_EXPIRE_MINUTES = "CHANTIER3A_ACCESS_TOKEN_EXPIRE_MINUTES"
@@ -61,6 +64,8 @@ DEFAULT_GOODIES_SHOP_URL = "https://shop.ourtdev.com"
 DEFAULT_ADDR = ":8080"
 DEFAULT_DATA_DIR = "./data"
 DEFAULT_BASE_URL = "http://localhost:8080"
+DEFAULT_STAFF_AUTH_PATH = "/acces-equipe"
+DEFAULT_SCANNER_APP_PATH = "/admin/scanner"
 
 
 @dataclass
@@ -96,6 +101,9 @@ class Config:
     storefront_url: str
     public_signup: bool
     contact_to: str
+    staff_auth_path: str
+    scanner_app_path: str
+    scanner_app_url: str
     secret_key: str
     algorithm: str
     access_token_expire_minutes: int
@@ -132,6 +140,45 @@ def _resolve_listen_addr(cli_addr: str) -> str:
         return f":{port}"
     explicit = cli_addr or _env(ENV_ADDR, DEFAULT_ADDR)
     return explicit or DEFAULT_ADDR
+
+
+def _staff_auth_path() -> str:
+    """Public URL path for staff sign-in (must match frontend VITE_STAFF_AUTH_PATH)."""
+    raw = _env(ENV_STAFF_AUTH_PATH, DEFAULT_STAFF_AUTH_PATH) or DEFAULT_STAFF_AUTH_PATH
+    if not raw.startswith("/"):
+        raw = f"/{raw}"
+    trimmed = raw.rstrip("/")
+    return trimmed or DEFAULT_STAFF_AUTH_PATH
+
+
+def _scanner_app_path() -> str:
+    """Path to the mobile gate scanner app (PWA route in the web frontend)."""
+    raw = _env(ENV_SCANNER_APP_PATH, DEFAULT_SCANNER_APP_PATH) or DEFAULT_SCANNER_APP_PATH
+    if not raw.startswith("/"):
+        raw = f"/{raw}"
+    trimmed = raw.rstrip("/")
+    return trimmed or DEFAULT_SCANNER_APP_PATH
+
+
+def _public_app_base(config: Config) -> str:
+    """Public site base URL (admin SPA when configured, else API base_url)."""
+    admin = (config.admin_url or "").strip().rstrip("/")
+    if admin:
+        return admin
+    return config.base_url.rstrip("/")
+
+
+def staff_login_url(config: Config) -> str:
+    """Web back-office sign-in URL for admin and owner roles."""
+    return f"{_public_app_base(config)}{config.staff_auth_path}"
+
+
+def scanner_login_url(config: Config) -> str:
+    """Scanner entry URL (full mobile app URL or web scanner route)."""
+    explicit = config.scanner_app_url.strip()
+    if explicit:
+        return explicit.rstrip("/")
+    return f"{_public_app_base(config)}{config.scanner_app_path}"
 
 
 def _truthy(key: str) -> bool:
@@ -236,6 +283,9 @@ def load_config(
         storefront_url=_env(ENV_STOREFRONT_URL) or "http://localhost:5173",
         public_signup=demo or _truthy(ENV_PUBLIC_SIGNUP),
         contact_to=_env(ENV_CONTACT_TO),
+        staff_auth_path=_staff_auth_path(),
+        scanner_app_path=_scanner_app_path(),
+        scanner_app_url=_env(ENV_SCANNER_APP_URL),
         secret_key=jwt_secret,
         algorithm=jwt_algorithm,
         access_token_expire_minutes=access_expire,

@@ -69,6 +69,12 @@ export interface OrgInvite {
 /** The plaintext invite token, returned exactly once from `orgMembers.invite()`. */
 export interface OrgInviteCreated {
     invite_id: string;
+    /** True when the backend created a new staff account for this e-mail. */
+    account_created?: boolean;
+    /** Initial password when `account_created` is true (default staff password). */
+    default_password?: string;
+    /** True when SMTP is configured and an invite e-mail was queued. */
+    email_sent?: boolean;
     token: string;
     expires_at: string;
 }

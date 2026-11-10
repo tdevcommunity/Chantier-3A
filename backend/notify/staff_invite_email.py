@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 
 _ROLE_LABELS = {
-    "owner": "Propriétaire",
+    "owner": "Super Admin",
     "admin": "Administrateur",
     "scanner": "Contrôle entrée",
 }

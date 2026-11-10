@@ -11,7 +11,7 @@ from config import Config
 log = logging.getLogger("chantier3a.notify.invite")
 
 ROLE_LABELS = {
-    "owner": "Propriétaire",
+    "owner": "Super Admin",
     "admin": "Administrateur",
     "scanner": "Scanner",
 }

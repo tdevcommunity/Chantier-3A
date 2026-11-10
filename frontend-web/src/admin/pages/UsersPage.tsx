@@ -376,13 +376,13 @@ export const UsersPage: React.FC = () => {
                         >
                           {roleOptionsFor(m).map((r) => (
                             <option key={r} value={r}>
-                              {r === 'owner' ? 'Owner' : r === 'admin' ? 'Admin' : 'Scanner'}
+                              {r === 'owner' ? 'Super Admin' : r === 'admin' ? 'Admin' : 'Scanner'}
                             </option>
                           ))}
                         </select>
                       ) : (
                         <span className="font-semibold capitalize text-slate-700 px-2 py-0.5 rounded-md bg-slate-100 text-[11px]">
-                          {m.role}
+                          {m.role === 'owner' ? 'Super Admin' : m.role === 'admin' ? 'Admin' : 'Scanner'}
                         </span>
                       )}
                     </td>

@@ -21,6 +21,7 @@ import { UsersPage } from './pages/UsersPage';
 import { EventSettingsPage } from './pages/EventSettingsPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
+import { StaffPortal } from './pages/StaffPortal';
 
 import { getAdminRoute } from '@/lib/env';
 import { STOREFRONT_THEME_CLASS } from '@/components/storefront/StorefrontTheme';
@@ -46,22 +47,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   }
 
   if (staffAccessDenied) {
-    return (
-      <div className="admin-app flex min-h-screen flex-col items-center justify-center gap-4 bg-[#ecefed] p-6">
-        <AdminTdevLogo variant="onLight" size="lg" />
-        <h1 className="text-xl font-semibold text-zinc-900">Accès refusé</h1>
-        <p className="max-w-md text-center text-sm text-zinc-600">
-          Votre compte n’a pas les droits administrateur sur cet événement.
-        </p>
-        <button
-          type="button"
-          onClick={() => logout()}
-          className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
-        >
-          Se déconnecter
-        </button>
-      </div>
-    );
+    return <StaffPortal />;
   }
 
   return <>{children}</>;

@@ -19,13 +19,21 @@ class Org:
     created_at: datetime
 
 
-def _parse_time(text: str) -> datetime:
+def _parse_time(text: Any) -> datetime:
     """Internal: parse time."""
-    from datetime import timezone
+    from datetime import datetime, timezone
+
+    if isinstance(text, datetime):
+        return text if text.tzinfo is not None else text.replace(tzinfo=timezone.utc)
+    if not isinstance(text, str):
+        return datetime.now(timezone.utc)
 
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
-    return datetime.fromisoformat(text).astimezone(timezone.utc)
+    try:
+        return datetime.fromisoformat(text).astimezone(timezone.utc)
+    except Exception:
+        return datetime.now(timezone.utc)
 
 
 def _row_org(row) -> Org:

@@ -6,11 +6,14 @@ from fastapi.testclient import TestClient
 def test_create_invite_returns_email_sent_flag(client: TestClient, demo_store, monkeypatch):
     sent = {"ok": False}
 
-    def fake_send(config, **kwargs):
+    def fake_send(config, ctx=None, **kwargs):
         sent["ok"] = True
         return True
 
-    monkeypatch.setattr("notify.invite_email.send_org_invite_email", fake_send)
+    monkeypatch.setattr("notify.staff_invite_mail.send_staff_invite_email", fake_send)
+    _store, cfg, _services, app = demo_store
+    app.state.config.smtp_host = "smtp.example.com"
+    app.state.config.smtp_from = "noreply@example.com"
 
     signup = client.post(
         "/api/auth/signup",

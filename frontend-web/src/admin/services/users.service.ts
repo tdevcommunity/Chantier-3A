@@ -60,4 +60,35 @@ export const usersService = {
   async removeMember(orgId: string, userId: string): Promise<void> {
     await apiFetch(`/orgs/${orgId}/members/${userId}`, { method: 'DELETE' });
   },
+
+  async createOrUpdateStaff(
+    orgId: string,
+    payload: { email: string; name?: string; password?: string; role?: 'scanner' | 'admin' },
+  ): Promise<{ ok: boolean; user: { id: string; email: string; name: string; role: string } }> {
+    return apiFetch(`/orgs/${orgId}/staff`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async resetStaffPassword(
+    orgId: string,
+    userId: string,
+    newPassword: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    return apiFetch(`/orgs/${orgId}/staff/${userId}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ new_password: newPassword }),
+    });
+  },
+
+  async changeMyPassword(
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    return apiFetch(`/auth/change-password`, {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+  },
 };

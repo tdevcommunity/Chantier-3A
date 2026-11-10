@@ -8,6 +8,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Response
+from pydantic import BaseModel
 
 from auth import rbac
 from auth import service as auth_svc
@@ -269,3 +270,119 @@ def _json(obj: dict) -> str:
     import json
 
     return json.dumps(obj)
+
+
+class CreateStaffBody(BaseModel):
+    email: str = ""
+    name: str = ""
+    password: str = ""
+    role: str = "scanner"
+
+
+class ResetStaffPasswordBody(BaseModel):
+    new_password: str = ""
+
+
+@router.post("/{org_id}/staff")
+def create_or_update_staff(
+    org_id: str,
+    body: CreateStaffBody,
+    state: AppState = Depends(require_user),
+):
+    """Direct creation or update of an operational staff account by an admin/owner."""
+    if not rbac.can_manage_org(state.store, state.current_user.id, org_id, rbac.ROLE_ADMIN):
+        return json_error(403, "forbidden", "Droits administrateur requis sur cette organisation.")
+
+    email = (body.email or "").strip().lower()
+    role = (body.role or "scanner").strip().lower()
+    name = (body.name or "").strip() or email.split("@")[0]
+    password = (body.password or "").strip()
+
+    if not email:
+        return json_error(400, "invalid_request", "L'adresse e-mail est requise.")
+    if role not in ("scanner", "admin"):
+        return json_error(400, "invalid_request", "Rôle invalide (scanner ou admin).")
+    if len(password) < auth_svc.MIN_PASSWORD_LENGTH:
+        return json_error(
+            400,
+            "invalid_request",
+            f"Le mot de passe doit comporter au moins {auth_svc.MIN_PASSWORD_LENGTH} caractères.",
+        )
+
+    from auth.email_canonical import canonical_email
+    try:
+        norm = canonical_email(email)
+    except Exception:
+        norm = email
+
+    from auth.password import hash_password
+    from store import users as user_store
+    now = datetime.now(timezone.utc)
+    ph = hash_password(password)
+
+    try:
+        existing = user_store.get_user_by_email(state.store, norm)
+        user_store.update_password_hash(state.store, existing.id, ph)
+        user_id = existing.id
+        user_name = existing.name or name
+    except NotFoundError:
+        user = user_store.create_user(
+            state.store,
+            user_store.UserPartial(email=norm, password_hash=ph, name=name),
+        )
+        user_id = user.id
+        user_name = user.name
+
+    try:
+        orgs_repo.get_org_member_role(state.store, org_id, user_id)
+        state.store.execute(
+            "UPDATE org_members SET role = ? WHERE org_id = ? AND user_id = ?",
+            (role, org_id, user_id),
+        )
+    except NotFoundError:
+        orgs_repo.add_org_member(state.store, org_id, user_id, role, now)
+
+    return {
+        "ok": True,
+        "user": {
+            "id": user_id,
+            "email": norm,
+            "name": user_name,
+            "role": role,
+        },
+    }
+
+
+@router.post("/{org_id}/staff/{user_id}/reset-password")
+def reset_staff_password(
+    org_id: str,
+    user_id: str,
+    body: ResetStaffPasswordBody,
+    state: AppState = Depends(require_user),
+):
+    """Admin resets password for a staff member."""
+    if not rbac.can_manage_org(state.store, state.current_user.id, org_id, rbac.ROLE_ADMIN):
+        return json_error(403, "forbidden", "Droits administrateur requis.")
+
+    new_pw = (body.new_password or "").strip()
+    if len(new_pw) < auth_svc.MIN_PASSWORD_LENGTH:
+        return json_error(
+            400,
+            "invalid_request",
+            f"Le mot de passe doit comporter au moins {auth_svc.MIN_PASSWORD_LENGTH} caractères.",
+        )
+
+    try:
+        target_role = orgs_repo.get_org_member_role(state.store, org_id, user_id)
+        my_role = orgs_repo.get_org_member_role(state.store, org_id, state.current_user.id)
+    except NotFoundError:
+        return json_error(404, "not_found", "Membre introuvable dans cette organisation.")
+
+    if rbac._RANK.get(target_role, 0) > rbac._RANK.get(my_role, 0):
+        return json_error(403, "forbidden", "Impossible de modifier le mot de passe d'un rôle supérieur.")
+
+    from auth.password import hash_password
+    from store import users as user_store
+    ph = hash_password(new_pw)
+    user_store.update_password_hash(state.store, user_id, ph)
+    return {"ok": True, "message": "Mot de passe réinitialisé avec succès."}

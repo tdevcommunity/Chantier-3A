@@ -140,6 +140,7 @@ def test_signup_with_invite_when_public_signup_off(client: TestClient, demo_stor
     assert joined.status_code == 200, joined.text
     assert joined.json()["user"]["email"] == "staff@example.com"
 
+    client.cookies.clear()
     already_used = client.post(
         "/api/auth/signup-with-invite",
         json={"token": token, "password": "longpassword2", "name": "Staff"},

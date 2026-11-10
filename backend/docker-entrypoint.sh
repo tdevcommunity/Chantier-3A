@@ -15,6 +15,14 @@ run_migrate() {
     return 0
   fi
   billetterie-api migrate
+
+  # Auto-provision initial staff admin if defined
+  if [ -n "${CHANTIER3A_BOOTSTRAP_EMAIL:-}" ] && [ -n "${CHANTIER3A_BOOTSTRAP_PASSWORD:-}" ]; then
+    CHANTIER3A_BOOTSTRAP_STAFF=1 billetterie-api bootstrap-staff \
+      --email "${CHANTIER3A_BOOTSTRAP_EMAIL}" \
+      --password "${CHANTIER3A_BOOTSTRAP_PASSWORD}" \
+      --role "${CHANTIER3A_BOOTSTRAP_ROLE:-owner}" || true
+  fi
 }
 
 run_serve() {

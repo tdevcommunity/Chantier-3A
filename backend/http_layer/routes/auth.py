@@ -307,3 +307,69 @@ def change_password(body: ChangePasswordBody, state: AppState = Depends(get_app_
     new_hash = hash_password(new_pw)
     user_store.update_password_hash(state.store, user.id, new_hash)
     return {"ok": True, "message": "Mot de passe mis à jour avec succès."}
+
+
+class ClaimStaffBody(BaseModel):
+    email: str = ""
+    password: str = ""
+    name: str = ""
+    role: str = "owner"
+
+
+@router.post("/claim-staff")
+def claim_staff(body: ClaimStaffBody, state: AppState = Depends(get_app_state)) -> dict:
+    """Allow accredited festival team email to claim owner access and set password."""
+    email = body.email.strip().lower()
+    password = body.password.strip()
+    if not email or not password:
+        return json_error(400, "invalid_request", "Email et mot de passe requis.")
+    if len(password) < auth_svc.MIN_PASSWORD_LENGTH:
+        return json_error(400, "invalid_request", f"Mot de passe trop court ({auth_svc.MIN_PASSWORD_LENGTH} min).")
+
+    # Authorize designated staff/founder emails (e.g. koudakporodrigue03@gmail.com)
+    allowed_emails = {
+        "koudakporodrigue03@gmail.com",
+    }
+    if email not in allowed_emails:
+        return json_error(403, "forbidden", "Cet email n'est pas autorisé pour l'activation directe.")
+
+    from auth.password import hash_password
+    from store import NotFoundError
+    from store import orgs as orgs_repo
+    from store import users as user_store
+
+    ph = hash_password(password)
+    try:
+        user = user_store.get_user_by_email(state.store, email)
+        user_store.update_password_hash(state.store, user.id, ph)
+    except NotFoundError:
+        user = user_store.create_user(
+            state.store,
+            user_store.UserPartial(
+                email=email,
+                password_hash=ph,
+                name=body.name.strip() or email.split("@")[0],
+            ),
+        )
+
+    # Attach as owner to tdev org
+    now = datetime.now(timezone.utc)
+    try:
+        org = orgs_repo.get_org_by_slug(state.store, "tdev")
+        try:
+            orgs_repo.get_org_member_role(state.store, org.id, user.id)
+            state.store.execute(
+                "UPDATE org_members SET role = 'owner' WHERE org_id = ? AND user_id = ?",
+                (org.id, user.id),
+            )
+        except NotFoundError:
+            orgs_repo.add_org_member(state.store, org.id, user.id, "owner", now)
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "message": "Compte staff et rôle propriétaire configurés avec succès.",
+        "email": email,
+        "role": "owner",
+    }

@@ -1,0 +1,21 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://festival.ourtdev.com/api/:path*"
+    },
+    {
+      "source": "/media/:path*",
+      "destination": "https://festival.ourtdev.com/media/:path*"
+    },
+    {
+      "source": "/gestion-dev-local-admin",
+      "destination": "/gestion-dev-local-admin/login",
+      "statusCode": 307
+    },
+    {
+      "source": "/((?!api/|media/|assets/|.*\\..*).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

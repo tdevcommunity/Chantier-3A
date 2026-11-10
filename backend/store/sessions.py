@@ -17,13 +17,21 @@ class Session:
     created_at: datetime
 
 
-def _parse_time(text: str) -> datetime:
+def _parse_time(text: Any) -> datetime:
     """Internal: parse time."""
-    from datetime import timezone
+    from datetime import datetime, timezone
+
+    if isinstance(text, datetime):
+        return text if text.tzinfo is not None else text.replace(tzinfo=timezone.utc)
+    if not isinstance(text, str):
+        return datetime.now(timezone.utc)
 
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
-    return datetime.fromisoformat(text).astimezone(timezone.utc)
+    try:
+        return datetime.fromisoformat(text).astimezone(timezone.utc)
+    except Exception:
+        return datetime.now(timezone.utc)
 
 
 def create_session(st: Store, token_hash: str, user_id: str, expires_at: datetime, created_at: datetime) -> None:
@@ -32,6 +40,9 @@ def create_session(st: Store, token_hash: str, user_id: str, expires_at: datetim
         """
         INSERT INTO sessions (token_hash, user_id, expires_at, created_at)
         VALUES (?, ?, ?, ?)
+        ON CONFLICT (token_hash) DO UPDATE SET
+            expires_at = EXCLUDED.expires_at,
+            created_at = EXCLUDED.created_at
         """,
         (
             token_hash,

@@ -22,38 +22,35 @@ def test_admin_can_change_scanner_role(client: TestClient, demo_store):
     owner_h = _signup(client, "owner-patch@example.com", "Owner")
     org_id = _org(client, owner_h, "patch-org-1")
 
+    # Invite admin (creates account with default password)
     inv = client.post(
         f"/api/orgs/{org_id}/invites",
         json={"email": "admin-patch@example.com", "role": "admin"},
         headers=owner_h,
     )
     assert inv.status_code == 201, inv.text
-    admin_token = inv.json()["token"]
     client.cookies.clear()
-    admin_join = client.post(
-        "/api/auth/signup-with-invite",
-        json={"token": admin_token, "password": "longpassword2", "name": "Admin"},
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"email": "admin-patch@example.com", "password": "Tfestiv2026"},
     )
-    assert admin_join.status_code == 200, admin_join.text
-    admin_h = {"Authorization": f"Bearer {admin_join.json()['token']}"}
-    client.post("/api/invites/accept", json={"token": admin_token}, headers=admin_h)
+    assert admin_login.status_code == 200, admin_login.text
+    admin_h = {"Authorization": f"Bearer {admin_login.json()['token']}"}
 
+    # Invite scanner
     inv2 = client.post(
         f"/api/orgs/{org_id}/invites",
         json={"email": "scan-patch@example.com", "role": "scanner"},
         headers=owner_h,
     )
-    scan_token = inv2.json()["token"]
+    assert inv2.status_code == 201, inv2.text
     client.cookies.clear()
-    scan_join = client.post(
-        "/api/auth/signup-with-invite",
-        json={"token": scan_token, "password": "longpassword3", "name": "Scan"},
+    scan_login = client.post(
+        "/api/auth/login",
+        json={"email": "scan-patch@example.com", "password": "Tfestiv2026"},
     )
-    assert scan_join.status_code == 200, scan_join.text
-    scan_user_id = scan_join.json()["user"]["id"]
-    client.post("/api/invites/accept", json={"token": scan_token}, headers={
-        "Authorization": f"Bearer {scan_join.json()['token']}",
-    })
+    assert scan_login.status_code == 200, scan_login.text
+    scan_user_id = scan_login.json()["user"]["id"]
 
     patch = client.patch(
         f"/api/orgs/{org_id}/members/{scan_user_id}",
@@ -72,14 +69,14 @@ def test_admin_cannot_promote_to_owner(client: TestClient, demo_store):
         json={"email": "admin2-patch@example.com", "role": "admin"},
         headers=owner_h,
     )
-    admin_token = inv.json()["token"]
+    assert inv.status_code == 201
     client.cookies.clear()
-    admin_join = client.post(
-        "/api/auth/signup-with-invite",
-        json={"token": admin_token, "password": "longpassword2", "name": "Admin2"},
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"email": "admin2-patch@example.com", "password": "Tfestiv2026"},
     )
-    admin_h = {"Authorization": f"Bearer {admin_join.json()['token']}"}
-    client.post("/api/invites/accept", json={"token": admin_token}, headers=admin_h)
+    assert admin_login.status_code == 200
+    admin_h = {"Authorization": f"Bearer {admin_login.json()['token']}"}
 
     members = client.get(f"/api/orgs/{org_id}/members", headers=admin_h)
     owner_id = next(m["user_id"] for m in members.json()["members"] if m["role"] == "owner")

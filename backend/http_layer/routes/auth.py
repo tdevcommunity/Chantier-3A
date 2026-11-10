@@ -35,14 +35,25 @@ class SignupWithInviteBody(BaseModel):
 
 def _user_view(u: User) -> dict:
     """Internal: user view."""
+    created_at = u.created_at
+    if isinstance(created_at, datetime):
+        created_str = created_at.isoformat().replace("+00:00", "Z")
+    elif created_at:
+        created_str = str(created_at)
+    else:
+        created_str = ""
     out = {
         "id": u.id,
         "email": u.email,
         "name": u.name,
-        "created_at": u.created_at.isoformat().replace("+00:00", "Z"),
+        "created_at": created_str,
     }
     if u.email_verified_at:
-        out["email_verified_at"] = u.email_verified_at.isoformat().replace("+00:00", "Z")
+        ev = u.email_verified_at
+        if isinstance(ev, datetime):
+            out["email_verified_at"] = ev.isoformat().replace("+00:00", "Z")
+        else:
+            out["email_verified_at"] = str(ev)
     return out
 
 
@@ -264,3 +275,35 @@ def password_update(body: PasswordUpdateBody, state: AppState = Depends(get_app_
     except Exception:
         return json_error(500, "internal_error", "internal error")
     return {"ok": True}
+
+
+class ChangePasswordBody(BaseModel):
+    old_password: str = ""
+    new_password: str = ""
+    current_password: str = ""
+
+
+@router.post("/change-password")
+def change_password(body: ChangePasswordBody, state: AppState = Depends(get_app_state)) -> dict:
+    """Change password for the currently authenticated user."""
+    if state.current_user is None:
+        return json_error(401, "unauthorized", "Connexion requise.")
+    old_pw = (body.old_password or body.current_password).strip()
+    new_pw = body.new_password.strip()
+    if not old_pw or not new_pw:
+        return json_error(400, "invalid_request", "L'ancien et le nouveau mot de passe sont requis.")
+    if len(new_pw) < auth_svc.MIN_PASSWORD_LENGTH:
+        return json_error(
+            400,
+            "invalid_request",
+            f"Le mot de passe doit comporter au moins {auth_svc.MIN_PASSWORD_LENGTH} caractères.",
+        )
+    user = state.current_user
+    if not user.password_hash or not auth_svc.verify_password(user.password_hash, old_pw):
+        return json_error(401, "unauthorized", "Ancien mot de passe incorrect.")
+
+    from auth.password import hash_password
+    from store import users as user_store
+    new_hash = hash_password(new_pw)
+    user_store.update_password_hash(state.store, user.id, new_hash)
+    return {"ok": True, "message": "Mot de passe mis à jour avec succès."}

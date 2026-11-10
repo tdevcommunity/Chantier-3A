@@ -64,14 +64,21 @@ class UserPartial():
     refresh_token: str | None = None
     disabled: bool = False
 
-def _parse_time(text: str | None) -> datetime | None:
+def _parse_time(text: Any) -> datetime | None:
     """Internal: parse time."""
     if not text:
+        return None
+    if isinstance(text, datetime):
+        return text if text.tzinfo is not None else text.replace(tzinfo=timezone.utc)
+    if not isinstance(text, str):
         return None
 
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
-    return datetime.fromisoformat(text).astimezone(timezone.utc)
+    try:
+        return datetime.fromisoformat(text).astimezone(timezone.utc)
+    except Exception:
+        return None
 
 
 def get_user_by_email(st: Store, email: str) -> User:

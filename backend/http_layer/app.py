@@ -85,6 +85,7 @@ def create_app(
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
+        expose_headers=["X-Checkin-Signature", "ETag"],
     )
     app.add_middleware(
         SessionMiddleware,

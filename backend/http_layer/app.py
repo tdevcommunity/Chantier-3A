@@ -70,9 +70,18 @@ def create_app(
         )
 
     origins = [config.base_url.rstrip("/")] if config.base_url else ["*"]
+    # Allow mobile PWA origins hosted on Cloudflare Workers / Pages
+    origins.extend([
+        "https://tdev-scan.gabirusamaa.workers.dev",
+        "https://tdev-scan.pages.dev",
+    ])
+    extra_origins = os.getenv("CHANTIER3A_CORS_ORIGINS", "")
+    if extra_origins:
+        origins.extend(o.strip().rstrip("/") for o in extra_origins.split(",") if o.strip())
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
+        allow_origin_regex=r"https://.*\.workers\.dev|https://.*\.pages\.dev|https://.*\.ourtdev\.com",
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],

@@ -12,6 +12,7 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState, ErrorState, TableSkeleton } from '../components/ui/FeedbackStates';
 import { participantsService } from '../services/participants.service';
 import { exportsService } from '../services/exports.service';
+import { adminPath } from '../lib/utils';
 import { ExportEmptyError } from '../lib/export';
 import { adminMessages, adminUserMessage } from '../lib/admin-user-message';
 import { useToast } from '../context/ToastContext';
@@ -217,7 +218,7 @@ export const ParticipantsPage: React.FC = () => {
                   <tr
                     key={p.id}
                     className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
-                    onClick={() => navigate(`/participants/${p.id}`)}
+                    onClick={() => navigate(adminPath(`/participants/${p.id}`))}
                   >
                     <td className="py-4 px-5">
                       <div className="flex items-center gap-3">
@@ -246,14 +247,14 @@ export const ParticipantsPage: React.FC = () => {
                     <td className="py-4 px-5 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => navigate(`/participants/${p.id}`)}
+                          onClick={() => navigate(adminPath(`/participants/${p.id}`))}
                           className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-slate-100 rounded-lg transition-colors"
                           title="Voir le formulaire complet"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => navigate(`/orders/${p.order_id}`)}
+                          onClick={() => navigate(adminPath(`/orders/${p.order_id}`))}
                           className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
                           title="Voir la commande"
                         >

@@ -64,6 +64,16 @@ function copyFromApiError(err: ApiError): CheckoutFailureCopy {
             };
         case 'payment_not_confirmed':
             return PAYMENT_NOT_CONFIRMED;
+        case 'payment_reference_used':
+            return {
+                title: 'Référence déjà utilisée',
+                body: 'Cette référence de paiement a déjà été déclarée. Vérifiez la référence figurant sur votre SMS de confirmation.',
+            };
+        case 'pending_verification':
+            return {
+                title: 'Paiement déjà déclaré',
+                body: 'Un paiement est déjà en attente de vérification pour cette adresse e-mail. Vous recevrez votre billet par e-mail dès sa validation.',
+            };
         case 'database_unavailable':
         case 'network_error':
             return GENERIC_UNAVAILABLE;
@@ -111,7 +121,10 @@ function copyFromApiError(err: ApiError): CheckoutFailureCopy {
         if (
             msg.startsWith('Formulaire incomplet') ||
             msg.includes('Mobile Money invalide') ||
-            msg.startsWith('Adresse e-mail')
+            msg.startsWith('Adresse e-mail') ||
+            msg.startsWith('Référence de paiement') ||
+            msg.startsWith('Choisissez un opérateur') ||
+            msg.startsWith('Numéro émetteur')
         ) {
             return { title: 'Échec de la réservation', body: msg };
         }
@@ -125,10 +138,6 @@ function copyFromApiError(err: ApiError): CheckoutFailureCopy {
 
 /** Messages visiteur pour les popups d'échec (sans jargon technique). */
 export function checkoutFailureCopy(err: unknown): CheckoutFailureCopy {
-    if (err instanceof Error && err.message === 'velto_declined') {
-        return PAYMENT_NOT_CONFIRMED;
-    }
-
     if (err instanceof ApiError) {
         return copyFromApiError(err);
     }

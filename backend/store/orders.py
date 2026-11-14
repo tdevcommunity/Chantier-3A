@@ -45,6 +45,12 @@ class Order:
     motivation: str = ""
     wish: str = ""
     registration_form: str = "{}"
+    manual_operator: str | None = None
+    manual_payment_ref: str | None = None
+    manual_payment_phone: str | None = None
+    verified_at: datetime | None = None
+    verified_by: str | None = None
+    rejection_reason: str | None = None
 
 
 @dataclass
@@ -79,6 +85,12 @@ def _scan_order(row) -> Order:
             created_at=text_to_time(row["created_at"]),
             paid_at=text_to_null_time(row["paid_at"]),
             registration_form=row["registration_form"] or "{}",
+            manual_operator=row["manual_operator"],
+            manual_payment_ref=row["manual_payment_ref"],
+            manual_payment_phone=row["manual_payment_phone"],
+            verified_at=text_to_null_time(row["verified_at"]),
+            verified_by=row["verified_by"],
+            rejection_reason=row["rejection_reason"],
         )
     return Order(
         id=row[0],
@@ -101,6 +113,12 @@ def _scan_order(row) -> Order:
         created_at=text_to_time(row[17]),
         paid_at=text_to_null_time(row[18]),
         registration_form=row[19] or "{}",
+        manual_operator=row[20],
+        manual_payment_ref=row[21],
+        manual_payment_phone=row[22],
+        verified_at=text_to_null_time(row[23]),
+        verified_by=row[24],
+        rejection_reason=row[25],
     )
 
 
@@ -108,7 +126,9 @@ _ORDER_SELECT = """
         SELECT id, event_id, user_id, buyer_email, buyer_name,
                buyer_first_name, buyer_last_name, school_name, motivation, wish,
                status, subtotal_minor, fee_minor, total_minor, currency, provider,
-               provider_ref, created_at, paid_at, registration_form
+               provider_ref, created_at, paid_at, registration_form,
+               manual_operator, manual_payment_ref, manual_payment_phone,
+               verified_at, verified_by, rejection_reason
 """
 
 
@@ -167,6 +187,65 @@ def has_active_order_for_event_email(st: Store, event_id: str, email: str) -> bo
     return row is not None
 
 
+def has_pending_manual_order_for_event_email(st: Store, event_id: str, email: str) -> bool:
+    """True if this email has a manual payment declaration awaiting staff verification."""
+    normalized = _buyer_email_key(email)
+    if not normalized:
+        return False
+    row = st.fetchone(
+        """
+        SELECT id FROM orders
+        WHERE event_id = ? AND buyer_email = ?
+          AND status = 'pending' AND manual_payment_ref IS NOT NULL
+        LIMIT 1
+        """,
+        (event_id, normalized),
+    )
+    return row is not None
+
+
+def manual_payment_ref_in_use(st: Store, reference: str) -> bool:
+    """True if a live (pending or paid) order already declares this transfer reference."""
+    row = st.fetchone(
+        """
+        SELECT id FROM orders
+        WHERE manual_payment_ref = ? AND status IN ('pending', 'paid')
+        LIMIT 1
+        """,
+        (reference,),
+    )
+    return row is not None
+
+
+def mark_manual_verified(st: Store, order_id: str, verified_at: datetime, verified_by: str) -> None:
+    """Record who validated a manual payment (after the order settled)."""
+    st.primary.execute(
+        rebind_query("UPDATE orders SET verified_at = ?, verified_by = ? WHERE id = ?"),
+        (time_to_text(verified_at), verified_by, order_id),
+    )
+
+
+def reject_manual_order(
+    st: Store, order_id: str, reason: str, verified_by: str, verified_at: datetime
+) -> bool:
+    """Fail a manual order awaiting verification, release stock, store the reason."""
+    conn = st.primary
+    with st.transaction():
+        n = _tx_exec(
+            st,
+            conn,
+            """
+            UPDATE orders
+            SET rejection_reason = ?, verified_by = ?, verified_at = ?
+            WHERE id = ? AND status = 'pending' AND manual_payment_ref IS NOT NULL
+            """,
+            (reason, verified_by, time_to_text(verified_at), order_id),
+        )
+        if n == 0:
+            return False
+        return _cancel_order_tx(st, conn, order_id)
+
+
 def cancel_pending_orders_for_event_email(st: Store, event_id: str, email: str) -> int:
     """Release inventory and fail abandoned checkout attempts for the same e-mail."""
     normalized = _buyer_email_key(email)
@@ -176,6 +255,7 @@ def cancel_pending_orders_for_event_email(st: Store, event_id: str, email: str) 
         """
         SELECT id FROM orders
         WHERE event_id = ? AND buyer_email = ? AND status = 'pending'
+          AND manual_payment_ref IS NULL
         """,
         (event_id, normalized),
     )
@@ -233,7 +313,12 @@ def _create_order_tx(st, conn, order: Order, lines: list[OrderLine]):
                 rebind_query("SELECT COUNT(*) FROM ticket_types WHERE id = ?"),
                 (ln.ticket_type_id,),
             ).fetchone()
-            cnt = exists[0] if exists is not None else 0
+            if exists is None:
+                cnt = 0
+            elif hasattr(exists, "keys"):
+                cnt = next(iter(dict(exists).values()))
+            else:
+                cnt = exists[0]
             if int(cnt) == 0:
                 raise NotFoundError()
             raise SoldOutError()
@@ -245,8 +330,9 @@ def _create_order_tx(st, conn, order: Order, lines: list[OrderLine]):
         INSERT INTO orders (id, event_id, user_id, buyer_email, buyer_name,
             buyer_first_name, buyer_last_name, school_name, motivation, wish,
             status, subtotal_minor, fee_minor, total_minor, currency, provider, provider_ref,
-            created_at, paid_at, registration_form)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            created_at, paid_at, registration_form,
+            manual_operator, manual_payment_ref, manual_payment_phone)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             order.id,
@@ -269,6 +355,9 @@ def _create_order_tx(st, conn, order: Order, lines: list[OrderLine]):
             time_to_text(order.created_at),
             time_to_text(order.paid_at) if order.paid_at else None,
             order.registration_form or "{}",
+            order.manual_operator,
+            order.manual_payment_ref,
+            order.manual_payment_phone,
         ),
     )
 

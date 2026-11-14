@@ -478,6 +478,18 @@ Reponse : `{ "order", "tickets": [ ... ] }`
 
 Auth : admin+. Provider manual.
 
+### Paiement Mobile Money manuel (`provider: "manual_momo"`)
+
+Remplace les agregateurs pour le Pass Nexus Night : le client paie lui-meme un numero marchand puis declare la reference.
+
+1. `GET /api/payments/manual-options?amount_minor=5000` (public) : `{ operators: [{ code, label, merchant_number, fee_minor, total_minor }], min_reference_length }`. Operateurs : `xpress` (sans frais), `mixx_by_yas`, `moov_money` (frais de retrait par tranche, grille de `payments/manual_momo.py`). Numeros surchargeables par `CHANTIER3A_MERCHANT_XPRESS|MIXX|MOOV`.
+2. `POST /api/orders` avec `"provider": "manual_momo"` et `"manual_payment": { "operator", "reference", "phone" }`. `fee_minor` = frais de retrait, `total_minor` = prix + frais. La commande reste `pending`, `order.manual_payment` est renseigne (= « a verifier »). Aucun mail n'est envoye. Erreurs : `400 invalid_request` (declaration invalide), `409 payment_reference_used` (reference deja declaree sur une commande `pending`/`paid`), `409 pending_verification` (declaration deja en attente pour cet e-mail).
+3. `POST /api/payments/verify` ne peut pas confirmer ce type de commande (`402`) et `POST /api/payments/abandon` ne la libere pas : seul un admin traite la commande.
+4. `POST /api/orders/{order_id}/validate-manual` (admin+) : emet les billets et envoie le mail de confirmation + PDF. Idempotent. Reponse `{ order, tickets }`. `409` si aucune declaration en attente.
+5. `POST /api/orders/{order_id}/reject-manual` (admin+) body `{ "reason": "..." }` (obligatoire) : commande `failed`, stock libere, mail avec le motif au client. Reponse `{ order }`.
+
+`order.manual_payment` : `{ operator, reference, phone, rejection_reason, verified_by, verified_at }`. Les commandes declarees ne sont pas liberees par le nettoyage des commandes `pending` (TTL 45 min).
+
 ### POST `/api/payments/verify`
 
 Auth : Non.

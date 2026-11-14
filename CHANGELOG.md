@@ -2,6 +2,18 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les changements sont regroupés par branche de travail tant qu'ils ne sont pas publiés dans une version.
 
+## [Non publié] — `chore/paiement`
+
+### Modifié
+
+- **Pass Nexus Night : paiement Mobile Money manuel** à la place des agrégateurs (Velto / FedaPay). Le client voit les numéros marchands (Xpress, Mixx By Yas, Moov Money), paie lui-même et saisit sa référence de transaction + son numéro émetteur. La commande reste `pending` (« À vérifier ») ; aucun e-mail ni billet n'est envoyé automatiquement.
+- **Validation admin** : `POST /api/orders/{id}/validate-manual` émet les billets et envoie la confirmation ; `POST /api/orders/{id}/reject-manual` (motif obligatoire) annule la commande, libère le stock et prévient le client par e-mail.
+- **Frais de retrait** ajoutés au total selon l'opérateur (grille reprise d'apecol-familles ; Xpress sans frais). Calcul côté backend (`payments/manual_momo.py`), exposé par `GET /api/payments/manual-options`.
+- Référence de paiement **unique** (index partiel), pas de ré-inscription tant qu'une déclaration est en attente, commandes déclarées exemptées du nettoyage des commandes `pending` (TTL 45 min).
+- Migration `0024_manual_momo_payment.sql`.
+- Front : étape paiement dans le wizard (`ManualPaymentStep`), retour Velto supprimé ; admin : filtre « À vérifier », actions Valider / Rejeter.
+- Velto / FedaPay / provider distant restent dans le backend, **dormants** (activables par variables d'environnement).
+
 ## [Non publié] — `main` (TDEV Festival 2026)
 
 ### Ajouté

@@ -77,6 +77,18 @@ class BuyerBody(BaseModel):
     form: dict = Field(default_factory=dict)
 
 
+class ManualPaymentBody(BaseModel):
+    """Customer declaration of a manual Mobile Money transfer."""
+    operator: str = ""
+    reference: str = ""
+    phone: str = ""
+
+
+class RejectManualBody(BaseModel):
+    """Staff rejection of a manual payment."""
+    reason: str = ""
+
+
 class CreateOrderBody(BaseModel):
     """Request body to start checkout for an event."""
     event_id: str
@@ -84,6 +96,7 @@ class CreateOrderBody(BaseModel):
     buyer: BuyerBody
     provider: str = ""
     return_path: str = ""
+    manual_payment: ManualPaymentBody | None = None
 
 
 def _registration_json(o) -> dict:
@@ -122,6 +135,16 @@ def _order_json(o) -> dict:
         "provider_ref": o.provider_ref,
         "created_at": o.created_at.isoformat().replace("+00:00", "Z"),
     }
+    if getattr(o, "manual_payment_ref", ""):
+        out["manual_payment"] = {
+            "operator": o.manual_operator,
+            "reference": o.manual_payment_ref,
+            "phone": o.manual_payment_phone,
+            "rejection_reason": o.rejection_reason,
+            "verified_by": o.verified_by,
+        }
+        if o.verified_at:
+            out["manual_payment"]["verified_at"] = o.verified_at.isoformat().replace("+00:00", "Z")
     if o.paid_at:
         out["paid_at"] = o.paid_at.isoformat().replace("+00:00", "Z")
     if o.items is not None:
@@ -225,6 +248,10 @@ def create_order(body: CreateOrderBody, state: AppState = Depends(get_app_state)
         provider=body.provider,
         return_path=body.return_path,
     )
+    if body.manual_payment is not None:
+        inp.manual_operator = body.manual_payment.operator
+        inp.manual_reference = body.manual_payment.reference
+        inp.manual_phone = body.manual_payment.phone
     if state.current_user:
         inp.user_id = state.current_user.id
     try:
@@ -232,14 +259,25 @@ def create_order(body: CreateOrderBody, state: AppState = Depends(get_app_state)
     except NotFoundError:
         return json_error(404, "not_found", "event or ticket type not found")
     except OrdersError as err:
-        from orders.service import ErrDuplicateBuyerEmail
+        from orders.service import (
+            ErrDuplicateBuyerEmail,
+            ErrPaymentReferenceUsed,
+            ErrPendingVerification,
+            ErrSoldOut,
+        )
 
+        if err is ErrSoldOut:
+            return json_error(409, "sold_out", "Ce pass n'est plus disponible.")
         if err is ErrDuplicateBuyerEmail:
             return json_error(
                 409,
                 "duplicate_registration",
                 "Impossible de finaliser cette inscription avec ces informations.",
             )
+        if err is ErrPendingVerification:
+            return json_error(409, "pending_verification", str(err))
+        if err is ErrPaymentReferenceUsed:
+            return json_error(409, "payment_reference_used", str(err))
         message = str(err)
         if message.startswith("orders:"):
             message = "Inscription impossible. Vérifiez vos informations et réessayez."
@@ -489,6 +527,45 @@ def mark_order_paid(order_id: str, state: AppState = Depends(require_user)):
 def mark_order_failed(order_id: str, state: AppState = Depends(require_user)):
     """Mark order failed."""
     return _mark_order(order_id, state, paid=False)
+
+
+def _manual_admin_order(order_id: str, state: AppState):
+    """Load an order and check staff rights; returns (order, error_response)."""
+    try:
+        ord = state.services.orders.get(order_id)
+    except NotFoundError:
+        return None, json_error(404, "not_found", "order not found")
+    if not rbac.can_manage_event(state.store, state.current_user.id, ord.event_id, rbac.ROLE_ADMIN):
+        return None, json_error(403, "forbidden", "you are not an admin/owner of this event's org")
+    return ord, None
+
+
+@router.post("/orders/{order_id}/validate-manual")
+def validate_manual_order(order_id: str, state: AppState = Depends(require_user)):
+    """Admin: confirm a manual Mobile Money payment (tickets + e-mail are sent now)."""
+    _, err = _manual_admin_order(order_id, state)
+    if err is not None:
+        return err
+    try:
+        updated, tickets = state.services.orders.validate_manual(order_id, state.current_user.email)
+    except OrdersError:
+        return json_error(409, "conflict", "no manual payment awaiting verification for this order")
+    return {"order": _order_json(updated), "tickets": _tickets_json(tickets)}
+
+
+@router.post("/orders/{order_id}/reject-manual")
+def reject_manual_order(order_id: str, body: RejectManualBody, state: AppState = Depends(require_user)):
+    """Admin: reject a manual payment with a reason (stock released, buyer e-mailed)."""
+    _, err = _manual_admin_order(order_id, state)
+    if err is not None:
+        return err
+    if not body.reason.strip():
+        return json_error(400, "invalid_request", "Un motif de rejet est requis.")
+    try:
+        updated = state.services.orders.reject_manual(order_id, body.reason, state.current_user.email)
+    except OrdersError:
+        return json_error(409, "conflict", "no manual payment awaiting verification for this order")
+    return {"order": _order_json(updated)}
 
 
 @router.post("/orders/{order_id}/revoke-attendance")

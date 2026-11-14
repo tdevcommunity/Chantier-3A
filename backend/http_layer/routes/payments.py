@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from auth.email_canonical import canonical_email
 from http_layer.deps import AppState, get_app_state
@@ -85,6 +85,14 @@ def _provider_poll(
     return provider.verify(order.id)
 
 
+@router.get("/manual-options")
+def manual_payment_options(amount_minor: int = Query(..., ge=0)):
+    """Merchant numbers and withdrawal fees per operator for manual Mobile Money payment."""
+    from payments import manual_momo
+
+    return manual_momo.options_payload(amount_minor)
+
+
 @router.post("/status")
 def payment_status(body: dict, state: AppState = Depends(get_app_state)):
     """Poll provider payment state without issuing tickets."""
@@ -118,6 +126,9 @@ def abandon_pending_payment(body: dict, state: AppState = Depends(get_app_state)
     except NotFoundError:
         return json_error(404, "not_found", "Commande introuvable.")
     if order.status != "pending":
+        return {"order": _order_json(order), "released": False}
+    if order.manual_payment_ref:
+        # Declared manual payments are released by staff (reject), never by the buyer.
         return {"order": _order_json(order), "released": False}
     if raw_email:
         try:

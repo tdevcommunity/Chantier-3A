@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 from events import issue as issue_mod
 from events.passes import PASS_TIER_STUDENT, PASS_TIER_VIP
 from orders import registration as reg
+from payments import manual_momo as mm
 from payments import types as pt
 from payments.registry import Registry
 from store import (
@@ -49,6 +50,11 @@ ErrOrderNotPending = OrdersError("orders: order is not pending")
 ErrRegistrationIncomplete = OrdersError("orders: incomplete pass registration")
 ErrDuplicateBuyerEmail = OrdersError("orders: buyer email already registered for this event")
 ErrOrderNotRevokable = OrdersError("orders: order attendance cannot be revoked from its current status")
+ErrPendingVerification = OrdersError(
+    "Une déclaration de paiement est déjà en attente de vérification pour cette adresse e-mail."
+)
+ErrPaymentReferenceUsed = OrdersError("Cette référence de paiement a déjà été utilisée.")
+ErrNotManualPending = OrdersError("orders: no manual payment awaiting verification for this order")
 
 
 @dataclass
@@ -75,6 +81,9 @@ class CreateOrderInput:
     provider: str = ""
     callback_url: str = ""
     return_path: str = ""
+    manual_operator: str = ""
+    manual_reference: str = ""
+    manual_phone: str = ""
 
 
 @dataclass
@@ -101,6 +110,12 @@ class OrderView:
     paid_at: datetime | None = None
     items: list[dict] | None = None
     registration_form: dict | None = None
+    manual_operator: str = ""
+    manual_payment_ref: str = ""
+    manual_payment_phone: str = ""
+    verified_at: datetime | None = None
+    verified_by: str = ""
+    rejection_reason: str = ""
 
 
 @dataclass
@@ -166,6 +181,10 @@ class OrdersService:
             self._store, inp.event_id, registration.email
         ):
             raise ErrDuplicateBuyerEmail
+        if orders_repo.has_pending_manual_order_for_event_email(
+            self._store, inp.event_id, registration.email
+        ):
+            raise ErrPendingVerification
         holder_name = f"{registration.first_name} {registration.last_name}".strip() or inp.buyer_name.strip()
         lines: list[orders_repo.OrderLine] = []
         subtotal = 0
@@ -195,6 +214,20 @@ class OrdersService:
         provider = self._resolve_provider(inp.provider, amount_minor=subtotal)
         if subtotal > 0 and provider.name() == pt.PROVIDER_NAME_FREE:
             raise ErrPaymentUnavailable
+        is_manual_momo = provider.name() == pt.PROVIDER_NAME_MANUAL_MOMO
+        fee_minor = 0
+        manual_op = manual_ref = manual_phone = None
+        if is_manual_momo:
+            try:
+                manual_op, manual_ref, manual_phone = mm.validate_declaration(
+                    inp.manual_operator, inp.manual_reference, inp.manual_phone
+                )
+            except mm.ManualMomoError as err:
+                raise OrdersError(str(err)) from err
+            if orders_repo.manual_payment_ref_in_use(self._store, manual_ref):
+                raise ErrPaymentReferenceUsed
+            fee_minor = mm.withdrawal_fee(manual_op, subtotal)
+        total = subtotal + fee_minor
         order_id = new_ulid()
         ord_row = orders_repo.Order(
             id=order_id,
@@ -210,13 +243,16 @@ class OrdersService:
             registration_form=reg.dump_form(registration.form),
             status="pending",
             subtotal_minor=subtotal,
-            fee_minor=0,
-            total_minor=subtotal,
+            fee_minor=fee_minor,
+            total_minor=total,
             currency=currency,
             provider=provider.name(),
             provider_ref=None,
             created_at=now,
             paid_at=None,
+            manual_operator=manual_op,
+            manual_payment_ref=manual_ref,
+            manual_payment_phone=manual_phone,
         )
         try:
             order_items = orders_repo.create_order_with_items(self._store, ord_row, lines)
@@ -224,6 +260,11 @@ class OrdersService:
             raise ErrSoldOut from err
         except NotFoundError as err:
             raise ErrTicketTypeNotFound from err
+        except Exception as err:
+            # Race on the unique live-reference index: another order won the same reference.
+            if is_manual_momo and "unique" in f"{type(err).__name__} {err}".lower():
+                raise ErrPaymentReferenceUsed from err
+            raise
         callback_url = self._payment_callback_url(order_id, inp)
         try:
             charge = provider.begin(
@@ -232,7 +273,7 @@ class OrdersService:
                     event_id=inp.event_id,
                     buyer_email=registration.email,
                     buyer_name=holder_name,
-                    amount_minor=subtotal,
+                    amount_minor=total,
                     currency=currency,
                     callback_url=callback_url,
                     metadata={},
@@ -280,7 +321,7 @@ class OrdersService:
             if len(names) == 1:
                 name = names[0]
             else:
-                builtin = {pt.PROVIDER_NAME_MANUAL, pt.PROVIDER_NAME_FREE}
+                builtin = {pt.PROVIDER_NAME_MANUAL, pt.PROVIDER_NAME_MANUAL_MOMO, pt.PROVIDER_NAME_FREE}
                 paid = [n for n in names if n not in builtin]
                 if len(paid) != 1:
                     raise ErrProviderRequired
@@ -314,6 +355,47 @@ class OrdersService:
             raise ErrOrderNotPending
         fresh = orders_repo.get_order_by_id(self._store, order_id)
         return self._to_view(fresh, None)
+
+    def validate_manual(self, order_id: str, actor: str) -> tuple[OrderView, list[TicketView]]:
+        """Staff confirm a manual Mobile Money payment: mint tickets, send the confirmation e-mail."""
+        ord_row = orders_repo.get_order_by_id(self._store, order_id)
+        if ord_row.provider != pt.PROVIDER_NAME_MANUAL_MOMO:
+            raise ErrNotManualPending
+        if ord_row.status == "paid":
+            return self._already_settled(ord_row)
+        if ord_row.status != "pending" or not ord_row.manual_payment_ref:
+            raise ErrNotManualPending
+        now = datetime.now(timezone.utc)
+        result = pt.Result(
+            provider=pt.PROVIDER_NAME_MANUAL_MOMO,
+            reference=ord_row.id,
+            event_id=f"{pt.PROVIDER_NAME_MANUAL_MOMO}-{ord_row.id}",
+            status=pt.Status.PAID,
+            amount_minor=ord_row.total_minor,
+            currency=ord_row.currency,
+            paid_at=now,
+        )
+        _, tickets = self.settle(result)
+        orders_repo.mark_manual_verified(self._store, order_id, now, actor)
+        return self.get(order_id), tickets
+
+    def reject_manual(self, order_id: str, reason: str, actor: str) -> OrderView:
+        """Staff reject a manual payment: release stock and tell the buyer why."""
+        reason = (reason or "").strip()[:500]
+        if not reason:
+            raise OrdersError("Un motif de rejet est requis.")
+        ord_row = orders_repo.get_order_by_id(self._store, order_id)
+        if ord_row.provider != pt.PROVIDER_NAME_MANUAL_MOMO:
+            raise ErrNotManualPending
+        done = orders_repo.reject_manual_order(
+            self._store, order_id, reason, actor, datetime.now(timezone.utc)
+        )
+        if not done:
+            raise ErrNotManualPending
+        notifier = getattr(self._notify, "on_order_rejected", None)
+        if notifier is not None:
+            notifier(order_id)
+        return self.get(order_id)
 
     def revoke_attendance(self, order_id: str, *, actor_email: str = "") -> tuple[OrderView, list[TicketView]]:
         """Void all valid tickets for a paid order (admin retrait inscrit)."""
@@ -477,6 +559,12 @@ class OrdersService:
             created_at=o.created_at,
             paid_at=o.paid_at,
             items=item_views,
+            manual_operator=o.manual_operator or "",
+            manual_payment_ref=o.manual_payment_ref or "",
+            manual_payment_phone=o.manual_payment_phone or "",
+            verified_at=o.verified_at,
+            verified_by=o.verified_by or "",
+            rejection_reason=o.rejection_reason or "",
         )
 
     def _ticket_view(self, t: tickets_repo.Ticket) -> TicketView:

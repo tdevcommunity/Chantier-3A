@@ -14,7 +14,9 @@ Base production : **`https://festival.ourtdev.com`**
 
 - **URL recommandée** : `/inscription/nexus-night`
 - Exemple : `https://festival.ourtdev.com/inscription/nexus-night`
-- Flux : formulaire → **paiement Velto (Mobile Money)** → billets par e-mail (Festival + Nexus).
+- Flux : formulaire → **paiement Mobile Money manuel** (le client voit les numéros marchands Xpress / Mixx By Yas / Moov Money, paie lui-même, saisit la référence de transaction) → **vérification et validation par un admin** → billets par e-mail (Festival + Nexus).
+- Les frais de retrait de l'opérateur sont ajoutés au prix (Xpress : aucun frais).
+- Aucun billet ni e-mail de confirmation n'est envoyé avant la validation admin.
 
 ## Alias acceptés
 

@@ -101,6 +101,7 @@ class Provider(Protocol):
 
 
 PROVIDER_NAME_MANUAL = "manual"
+PROVIDER_NAME_MANUAL_MOMO = "manual_momo"
 PROVIDER_NAME_STUB = "stub"
 PROVIDER_NAME_FREE = "free"
 

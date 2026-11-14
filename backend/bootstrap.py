@@ -12,6 +12,7 @@ from payments.fedapay import FedapayProvider
 from payments.velto import VeltoProvider
 from payments.free import FreeProvider
 from payments.manual import ManualProvider
+from payments.manual_momo import ManualMomoProvider
 from payments.registry import Registry
 from payments.remote import RemotePaymentProvider
 from payments.stub import StubProvider
@@ -60,6 +61,7 @@ def build_payment_registry(store: Store, config: Config) -> Registry:
     reg = Registry.from_env(os.environ.get("CHANTIER3A_PAYMENT_PROVIDERS", ""))
     manual = ManualProvider(store=store)
     reg.register(manual)
+    reg.register(ManualMomoProvider())
     reg.register(FreeProvider())
     if config.demo:
         reg.register(StubProvider(opt_in=True))

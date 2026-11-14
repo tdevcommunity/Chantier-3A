@@ -288,6 +288,33 @@ export interface Order {
     /** Set by the manual provider's mark-paid/mark-failed audit trail. */
     marked_by?: string;
     marked_at?: string;
+    /** Déclaration de paiement Mobile Money manuel (présent dès que le client a saisi sa référence). */
+    manual_payment?: ManualPaymentInfo;
+}
+
+export type ManualOperatorCode = 'xpress' | 'mixx_by_yas' | 'moov_money';
+
+export interface ManualPaymentInfo {
+    operator: ManualOperatorCode | string;
+    reference: string;
+    phone: string;
+    rejection_reason?: string;
+    verified_by?: string;
+    verified_at?: string;
+}
+
+export interface ManualOperatorOption {
+    code: ManualOperatorCode;
+    label: string;
+    merchant_number: string;
+    fee_minor: number;
+    total_minor: number;
+}
+
+export interface ManualPaymentOptions {
+    amount_minor: number;
+    operators: ManualOperatorOption[];
+    min_reference_length: number;
 }
 
 export interface Ticket {

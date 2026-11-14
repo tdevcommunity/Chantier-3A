@@ -7,38 +7,36 @@ import {
     type RegistrationFormValues,
 } from '@/lib/registration-form';
 
+/** Déclaration d'un transfert Mobile Money fait manuellement par le client. */
+export interface ManualPaymentDeclaration {
+    operator: string;
+    reference: string;
+    phone: string;
+}
+
 export type CheckoutOutcome =
     | { kind: 'free_confirmed'; orderId: string; email: string }
-    | { kind: 'paid'; orderId: string; email: string }
-    | { kind: 'paid_pending'; orderId: string; email: string; redirectUrl?: string };
+    /** Paiement déclaré : en attente de vérification par l'équipe (pas de billet tant que non validé). */
+    | { kind: 'pending_verification'; orderId: string; email: string; totalMinor: number };
 
 export async function completeCheckout(params: {
     eventId: string;
     ticketType: TicketType;
     registration: RegistrationFormValues;
-    onPaymentStart?: () => void;
-    returnPath?: string;
+    /** Obligatoire pour un pass payant. */
+    manualPayment?: ManualPaymentDeclaration;
 }): Promise<CheckoutOutcome> {
-    const { eventId, ticketType, registration, onPaymentStart, returnPath } = params;
+    const { eventId, ticketType, registration, manualPayment } = params;
     const form = toRegistrationFormPayload(registration);
     const first = form.first_name;
     const last = form.last_name;
     const email = form.email;
     const name = `${first} ${last}`.trim();
+    const isPaid = ticketType.price_minor > 0;
 
-    const path =
-        returnPath ??
-        (() => {
-            const url = new URL(window.location.href);
-            url.searchParams.delete('velto_return');
-            url.searchParams.delete('order');
-            url.searchParams.delete('status');
-            url.searchParams.delete('id');
-            url.searchParams.delete('transaction_id');
-            url.searchParams.delete('token');
-            url.searchParams.delete('external_reference');
-            return `${url.pathname}${url.search}`;
-        })();
+    if (isPaid && !manualPayment) {
+        throw new Error('Veuillez renseigner votre paiement.');
+    }
 
     const result = await ordersApi.create({
         event_id: eventId,
@@ -53,20 +51,13 @@ export async function completeCheckout(params: {
             school_name: form.school_program,
             form,
         },
-        return_path: path || '/',
-        provider: 'velto',
+        ...(isPaid ? { provider: 'manual_momo', manual_payment: manualPayment } : {}),
     });
 
     const order = result.order;
-    const paid = order.total_minor > 0;
 
-    if (paid) {
-        onPaymentStart?.();
-        const redirectUrl = result.payment?.redirect_url?.trim();
-        if (redirectUrl) {
-            return { kind: 'paid_pending', orderId: order.id, email, redirectUrl };
-        }
-        return { kind: 'paid_pending', orderId: order.id, email };
+    if (order.total_minor > 0) {
+        return { kind: 'pending_verification', orderId: order.id, email, totalMinor: order.total_minor };
     }
 
     try {

@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useMemo, useState } from 'react';
 import { Loader2, Calendar, MapPin, Check, Gift } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -13,14 +12,11 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import type { ManualPaymentValue } from '@/components/registration/ManualPaymentStep';
 import { RegistrationWizard } from '@/components/registration/RegistrationWizard';
 import { resolveLiveCheckoutProduct } from '@/lib/billetterie-storefront';
 import { completeCheckout } from '@/lib/billetterie-checkout';
-import {
-    clearRegistrationDraft,
-    loadRegistrationDraft,
-    type RegistrationFormValues,
-} from '@/lib/registration-form';
+import { clearRegistrationDraft, type RegistrationFormValues } from '@/lib/registration-form';
 import {
     billetterieCardClass,
     billetterieCtaClass,
@@ -35,28 +31,15 @@ import { checkoutFailureCopy, logCheckoutDiagnostic } from '@/lib/user-facing-ch
 import { StorefrontBrandHomeLink } from '@/components/storefront/StorefrontBrandHomeLink';
 import { TDEV_LOGO_URL } from '@/components/brand/tdev-brand-assets';
 import { downloadGuestTicketPdfForOrder } from '@/lib/download-guest-ticket-pdf';
-import { isVeltoReturn, settleVeltoReturnFromUrl } from '@/lib/velto-payment-return';
-
-const isSafeRedirect = (url: string) => {
-    try {
-        return new URL(url).protocol === 'https:';
-    } catch {
-        return false;
-    }
-};
+import { PASS_TIER_PRICE_MINOR } from '@/lib/festival-storefront';
 
 export default function App() {
-    const location = useLocation();
-    const navigate = useNavigate();
-    const [searchParams] = useSearchParams();
     const products = useMemo(() => getStaticBilletterieListing(), []);
     const [registerOpen, setRegisterOpen] = useState(false);
     const [activeListing, setActiveListing] = useState<BilletterieListingProduct | null>(null);
     /** Remonte le wizard à chaque ouverture pour repartir du brouillon de session. */
     const [wizardKey, setWizardKey] = useState(0);
     const [submitting, setSubmitting] = useState(false);
-    const [confirmingPayment, setConfirmingPayment] = useState(() => isVeltoReturn(searchParams));
-    const veltoReturnHandled = useRef(false);
 
     const [successOpen, setSuccessOpen] = useState(false);
     const [successTitle, setSuccessTitle] = useState('');
@@ -121,38 +104,7 @@ export default function App() {
         setFailureOpen(true);
     };
 
-    useEffect(() => {
-        if (veltoReturnHandled.current || !isVeltoReturn(searchParams)) return;
-        veltoReturnHandled.current = true;
-        setConfirmingPayment(true);
-        setRegisterOpen(true);
-        const draftEmail = loadRegistrationDraft()?.values.email.trim() || '';
-        void settleVeltoReturnFromUrl(searchParams, navigate, location.pathname, draftEmail)
-            .then((result) => {
-            if (!result) return;
-            const email = result.buyerEmail.trim() || draftEmail;
-            const ticket =
-                result.outcome === 'paid' && email ? { orderId: result.orderId, email } : null;
-            if (result.outcome === 'paid') {
-                showSuccess(
-                    'Paiement confirmé',
-                    'Merci ! Votre billet est réservé. Vous recevrez votre confirmation par e-mail dans quelques instants. Pensez à vérifier vos spams.',
-                    ticket,
-                );
-            } else if (result.outcome === 'failed' || result.outcome === 'unpaid') {
-                showFailure(new Error('velto_declined'), 'velto_return');
-            } else {
-                showSuccess(
-                    'Paiement en cours de validation',
-                    'Nous vérifions votre paiement Mobile Money. Aucun billet n’est émis tant que la banque n’a pas confirmé.',
-                );
-            }
-        })
-            .finally(() => setConfirmingPayment(false));
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- une fois par retour Velto
-    }, []);
-
-    const handleSubmit = async (values: RegistrationFormValues) => {
+    const handleSubmit = async (values: RegistrationFormValues, manualPayment?: ManualPaymentValue) => {
         if (!activeListing?.checkoutTier) return;
 
         const passTitle = activeListing.title;
@@ -163,7 +115,7 @@ export default function App() {
                 eventId: live.event.id,
                 ticketType: live.product.ticketType,
                 registration: values,
-                onPaymentStart: () => setRegisterOpen(false),
+                manualPayment,
             });
             setRegisterOpen(false);
 
@@ -176,23 +128,9 @@ export default function App() {
                 return;
             }
 
-            if (outcome.kind === 'paid') {
-                showSuccess(
-                    'Paiement confirmé',
-                    `Merci ! Votre paiement pour le ${passTitle} est confirmé. Vous recevrez votre billet par e-mail à ${outcome.email} dans quelques instants. Pensez à vérifier vos spams.`,
-                    { orderId: outcome.orderId, email: outcome.email },
-                );
-                return;
-            }
-
-            if (outcome.redirectUrl && isSafeRedirect(outcome.redirectUrl)) {
-                window.location.href = outcome.redirectUrl;
-                return;
-            }
-
             showSuccess(
-                'Paiement en attente',
-                `Finalisez votre paiement pour le ${passTitle}. Votre billet sera envoyé à ${outcome.email} uniquement après confirmation du paiement.`,
+                'Paiement déclaré — en attente de validation',
+                `Merci ! Nous avons bien reçu votre déclaration de paiement pour le ${passTitle}. Notre équipe va vérifier votre transfert. Votre confirmation et votre billet seront envoyés à ${outcome.email} dès que votre paiement sera validé. Pensez à vérifier vos spams.`,
             );
         } catch (err) {
             showFailure(err);
@@ -354,21 +292,16 @@ export default function App() {
                         <DialogDescription>
                             {activeListing?.isFree
                                 ? 'Complétez le formulaire pour recevoir votre pass par e-mail.'
-                                : 'Complétez le formulaire, puis réglez votre pass. Vous recevrez le Pass Nexus Night et le Pass Festival par e-mail.'}
+                                : 'Complétez le formulaire, puis payez par Mobile Money et saisissez votre référence de paiement. Après vérification par notre équipe, vous recevrez le Pass Nexus Night et le Pass Festival par e-mail.'}
                         </DialogDescription>
                     </DialogHeader>
                     <RegistrationWizard
                         key={wizardKey}
                         passTitle={activeListing?.title ?? 'pass'}
                         isFree={activeListing?.isFree ?? true}
-                        submitting={submitting || confirmingPayment}
-                        submittingLabel={
-                            confirmingPayment
-                                ? 'Confirmation du paiement et émission du billet…'
-                                : undefined
-                        }
-                        resumeAtSummaryStep={confirmingPayment}
-                        onSubmit={(values) => void handleSubmit(values)}
+                        amountMinor={PASS_TIER_PRICE_MINOR[activeListing?.checkoutTier ?? 'vip']}
+                        submitting={submitting}
+                        onSubmit={(values, manualPayment) => void handleSubmit(values, manualPayment)}
                     />
                 </DialogContent>
             </Dialog>

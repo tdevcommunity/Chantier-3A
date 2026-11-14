@@ -16,6 +16,14 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import {
+    EMPTY_MANUAL_PAYMENT,
+    ManualPaymentStep,
+    formatPaymentReference,
+    validateManualPayment,
+    type ManualPaymentErrors,
+    type ManualPaymentValue,
+} from '@/components/registration/ManualPaymentStep';
 import { cn } from '@/lib/utils';
 import {
     AGE_RANGE_OPTIONS,
@@ -48,30 +56,34 @@ interface RegistrationWizardProps {
     passTitle: string;
     /** Le pass gratuit et le pass payant partagent exactement le même formulaire. */
     isFree: boolean;
+    /** Prix du pass (unités mineures) : sert à calculer les frais de retrait de l'étape paiement. */
+    amountMinor: number;
     submitting: boolean;
-    /** Libellé du bouton principal pendant `submitting` (ex. retour Mobile Money). */
+    /** Libellé du bouton principal pendant `submitting`. */
     submittingLabel?: string;
-    /** Afficher l’étape récapitulatif (retour paiement Velto). */
-    resumeAtSummaryStep?: boolean;
-    onSubmit: (values: RegistrationFormValues) => void;
+    /** Pass payant : reçoit aussi la déclaration de paiement Mobile Money saisie par le client. */
+    onSubmit: (values: RegistrationFormValues, manualPayment?: ManualPaymentValue) => void;
 }
 
 export function RegistrationWizard({
     passTitle,
     isFree,
+    amountMinor,
     submitting,
     submittingLabel,
-    resumeAtSummaryStep = false,
     onSubmit,
 }: RegistrationWizardProps) {
     const draft = useMemo(() => loadRegistrationDraft(), []);
     const [values, setValues] = useState<RegistrationFormValues>(draft?.values ?? emptyRegistrationForm());
     const [step, setStep] = useState(() => {
-        if (resumeAtSummaryStep) return REGISTRATION_STEP_COUNT - 1;
         const saved = draft?.step ?? 0;
         return Math.min(Math.max(saved, 0), REGISTRATION_STEP_COUNT - 1);
     });
     const [errors, setErrors] = useState<RegistrationFieldErrors>({});
+    const [paymentPhase, setPaymentPhase] = useState(false);
+    const [manualPayment, setManualPayment] = useState<ManualPaymentValue>(EMPTY_MANUAL_PAYMENT);
+    const [manualErrors, setManualErrors] = useState<ManualPaymentErrors>({});
+    const [minReferenceLength, setMinReferenceLength] = useState(6);
 
     useEffect(() => {
         saveRegistrationDraft(values, step);
@@ -111,9 +123,72 @@ export function RegistrationWizard({
             setErrors(validateRegistrationStep(invalidStep, values));
             return;
         }
-        // Le brouillon n'est effacé qu'en cas de succès (voir App.tsx) pour ne rien perdre si le paiement échoue.
+        if (!isFree) {
+            setPaymentPhase(true);
+            return;
+        }
+        // Le brouillon n'est effacé qu'en cas de succès (voir App.tsx) pour ne rien perdre si l'envoi échoue.
         onSubmit(values);
     };
+
+    const handleSubmitPayment = () => {
+        const errs = validateManualPayment(manualPayment, minReferenceLength);
+        setManualErrors(errs);
+        if (Object.keys(errs).length > 0) return;
+        onSubmit(values, {
+            ...manualPayment,
+            reference: formatPaymentReference(manualPayment.reference),
+        });
+    };
+
+    if (paymentPhase) {
+        return (
+            <div className="space-y-5">
+                <div className="flex items-baseline justify-between gap-3">
+                    <p className="text-sm font-semibold text-foreground">Paiement</p>
+                    <p className="text-xs text-muted-foreground">Dernière étape</p>
+                </div>
+                <ManualPaymentStep
+                    amountMinor={amountMinor}
+                    passTitle={passTitle}
+                    value={manualPayment}
+                    errors={manualErrors}
+                    onChange={(next) => {
+                        setManualPayment(next);
+                        setManualErrors({});
+                    }}
+                    onOptionsLoaded={(opts) => setMinReferenceLength(opts.min_reference_length)}
+                />
+                <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-between">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="sm:w-auto"
+                        onClick={() => setPaymentPhase(false)}
+                        disabled={submitting}
+                    >
+                        <ArrowLeft className="mr-2 h-4 w-4" />
+                        Retour
+                    </Button>
+                    <Button
+                        type="button"
+                        className="sm:w-auto"
+                        disabled={submitting || !manualPayment.operator}
+                        onClick={handleSubmitPayment}
+                    >
+                        {submitting ? (
+                            <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                {submittingLabel ?? 'Envoi en cours…'}
+                            </>
+                        ) : (
+                            'Envoyer ma déclaration de paiement'
+                        )}
+                    </Button>
+                </div>
+            </div>
+        );
+    }
 
     const isLastStep = step === REGISTRATION_STEP_COUNT - 1;
     const progress = Math.round(((step + 1) / REGISTRATION_STEP_COUNT) * 100);
@@ -440,7 +515,7 @@ export function RegistrationWizard({
                         <p className="text-xs text-muted-foreground">
                             {isFree
                                 ? `Après confirmation, votre ${passTitle} vous sera envoyé par e-mail (gratuit, sans paiement).`
-                                : `Étape suivante : règlement sécurisé de votre ${passTitle}. Votre billet vous sera envoyé par e-mail une fois le paiement confirmé.`}
+                                : `Étape suivante : paiement de votre ${passTitle} par Mobile Money. Votre billet vous sera envoyé par e-mail une fois votre paiement vérifié et validé par notre équipe.`}
                         </p>
                     </>
                 )}

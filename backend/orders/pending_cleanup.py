@@ -33,6 +33,7 @@ def release_stale_pending_orders(st: Store) -> int:
         """
         SELECT id FROM orders
         WHERE status = 'pending' AND created_at < ?
+          AND manual_payment_ref IS NULL
         """,
         (cutoff_text,),
     )

@@ -1,5 +1,7 @@
 # Procédure de test
 
+> **Pass Nexus Night : paiement Mobile Money manuel.** Les agrégateurs ne sont plus utilisés par le front. Parcours à tester : pass payant → formulaire → étape paiement (choisir un opérateur, noter le montant avec frais, saisir numéro émetteur + référence) → message « en attente de validation », **aucun e-mail** → dashboard admin, Commandes, filtre « À vérifier » → **Valider** (billets + e-mail envoyés) ou **Rejeter** avec motif (stock libéré, e-mail au client). Tests automatiques : `backend/tests/test_manual_momo.py`. Les sections FedaPay ci-dessous ne concernent que le backend dormant.
+
 Ce document décrit comment vérifier la billetterie : tests automatiques, puis parcours manuel de bout en bout avec la sandbox FedaPay. Les commandes sont à lancer depuis la racine du dépôt.
 
 ## 1. Tests automatiques (backend)

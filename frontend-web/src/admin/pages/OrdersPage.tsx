@@ -14,8 +14,9 @@ import { EmptyState, ErrorState, TableSkeleton } from '../components/ui/Feedback
 import { ordersService } from '../services/orders.service';
 import { exportsService } from '../services/exports.service';
 import { useToast } from '../context/ToastContext';
+import { ManualPaymentActions, OPERATOR_LABELS, isToVerify } from '../components/orders/ManualPaymentActions';
 import { adminUserMessage } from '../lib/admin-user-message';
-import { formatMoney, formatDateTime } from '../lib/utils';
+import { adminPath, formatMoney, formatDateTime } from '../lib/utils';
 import { Order, OrderStatus } from '../types';
 import { useEvent } from '../context/EventContext';
 
@@ -30,7 +31,7 @@ export const OrdersPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all' | 'to_verify'>('all');
   const [page, setPage] = useState(1);
   const limit = 10;
 
@@ -120,6 +121,7 @@ export const OrdersPage: React.FC = () => {
           className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
         >
           <option value="all">Tous les statuts</option>
+          <option value="to_verify">À vérifier (paiement manuel)</option>
           <option value="paid">Payé</option>
           <option value="pending">En attente</option>
           <option value="refunded">Remboursé</option>
@@ -147,7 +149,7 @@ export const OrdersPage: React.FC = () => {
                   <th className="py-3.5 px-5">ID Commande</th>
                   <th className="py-3.5 px-5">Participant</th>
                   <th className="py-3.5 px-5">Montant</th>
-                  <th className="py-3.5 px-5">Fournisseur</th>
+                  <th className="py-3.5 px-5">Opérateur</th>
                   <th className="py-3.5 px-5">Réf Paiement</th>
                   <th className="py-3.5 px-5">Statut</th>
                   <th className="py-3.5 px-5">Date Création</th>
@@ -159,7 +161,7 @@ export const OrdersPage: React.FC = () => {
                   <tr
                     key={o.id}
                     className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
-                    onClick={() => navigate(`orders/${o.id}`)}
+                    onClick={() => navigate(adminPath(`/orders/${o.id}`))}
                   >
                     <td className="py-4 px-5 font-mono font-bold text-violet-600">
                       {o.id}
@@ -174,18 +176,38 @@ export const OrdersPage: React.FC = () => {
 
                     <td className="py-4 px-5 font-bold text-slate-900">
                       {formatMoney(o.total_minor, o.currency)}
+                      {o.fee_minor > 0 && (
+                        <span className="block text-[10px] font-medium text-slate-400">
+                          dont {formatMoney(o.fee_minor, o.currency)} de frais
+                        </span>
+                      )}
                     </td>
 
-                    <td className="py-4 px-5 capitalize font-medium text-slate-600">
-                      {o.provider || '—'}
+                    <td className="py-4 px-5 font-medium text-slate-600">
+                      {o.manual_payment
+                        ? OPERATOR_LABELS[o.manual_payment.operator] ?? o.manual_payment.operator
+                        : o.provider || '—'}
+                      {o.manual_payment?.phone && (
+                        <span className="block font-mono text-[10px] text-slate-400">
+                          {o.manual_payment.phone}
+                        </span>
+                      )}
                     </td>
 
                     <td className="py-4 px-5 font-mono text-[11px] text-slate-500">
-                      {o.provider_ref || '—'}
+                      {o.manual_payment?.reference || o.provider_ref || '—'}
                     </td>
 
                     <td className="py-4 px-5">
-                      <StatusBadge status={o.status} type="order" />
+                      <StatusBadge status={isToVerify(o) ? 'to_verify' : o.status} type="order" />
+                      {o.status === 'failed' && o.manual_payment?.rejection_reason && (
+                        <span
+                          className="block mt-1 max-w-[180px] truncate text-[10px] text-slate-400"
+                          title={o.manual_payment.rejection_reason}
+                        >
+                          {o.manual_payment.rejection_reason}
+                        </span>
+                      )}
                     </td>
 
                     <td className="py-4 px-5 text-slate-500">
@@ -193,8 +215,9 @@ export const OrdersPage: React.FC = () => {
                     </td>
 
                     <td className="py-4 px-5 text-right" onClick={(e) => e.stopPropagation()}>
+                      <ManualPaymentActions order={o} compact onDone={() => void loadData()} />
                       <button
-                        onClick={() => navigate(`orders/${o.id}`)}
+                        onClick={() => navigate(adminPath(`/orders/${o.id}`))}
                         className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-slate-100 rounded-lg transition-colors"
                         title="Consulter"
                       >

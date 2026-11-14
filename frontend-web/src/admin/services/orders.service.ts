@@ -4,7 +4,7 @@ import { requireEventId } from '../context/EventContext';
 
 export interface OrderFilterParams {
   search?: string;
-  status?: OrderStatus | 'all';
+  status?: OrderStatus | 'all' | 'to_verify';
   page?: number;
   limit?: number;
 }
@@ -27,6 +27,8 @@ export const ordersService = {
           o.buyer_email,
           o.buyer_name,
           o.id,
+          o.manual_payment?.reference,
+          o.manual_payment?.phone,
           reg?.first_name,
           reg?.last_name,
           reg?.email,
@@ -40,7 +42,9 @@ export const ordersService = {
         return haystack.includes(q);
       });
     }
-    if (params.status && params.status !== 'all') {
+    if (params.status === 'to_verify') {
+      orders = orders.filter((o) => o.status === 'pending' && !!o.manual_payment?.reference);
+    } else if (params.status && params.status !== 'all') {
       orders = orders.filter((o) => o.status === params.status);
     }
 
@@ -62,6 +66,19 @@ export const ordersService = {
 
   async markPaid(orderId: string): Promise<{ order: Order; tickets: unknown[] }> {
     return apiFetch(`/orders/${orderId}/mark-paid`, { method: 'POST' });
+  },
+
+  /** Valide un paiement Mobile Money manuel : émet les billets et envoie la confirmation. */
+  async validateManual(orderId: string): Promise<{ order: Order; tickets: unknown[] }> {
+    return apiFetch(`/orders/${orderId}/validate-manual`, { method: 'POST' });
+  },
+
+  /** Rejette un paiement manuel (motif envoyé au client, stock libéré). */
+  async rejectManual(orderId: string, reason: string): Promise<{ order: Order }> {
+    return apiFetch(`/orders/${orderId}/reject-manual`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
   },
 
   async markFailed(orderId: string): Promise<{ order: Order }> {

@@ -121,6 +121,19 @@ export interface Order {
   created_at: string;
   paid_at?: string | null;
   items?: OrderItem[];
+  /** Déclaration de paiement Mobile Money manuel saisie par le client. */
+  manual_payment?: ManualPaymentInfo;
+  /** Présent sur GET /orders/{id} pour le staff. */
+  tickets?: Array<{ id: string }>;
+}
+
+export interface ManualPaymentInfo {
+  operator: string;
+  reference: string;
+  phone: string;
+  rejection_reason?: string;
+  verified_by?: string;
+  verified_at?: string;
 }
 
 export interface Ticket {

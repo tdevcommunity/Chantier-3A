@@ -62,6 +62,13 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
       IconComponent = <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />;
       break;
 
+    // Paiement manuel déclaré, à contrôler par l'équipe
+    case 'to_verify':
+      label = 'À vérifier';
+      bgClass = 'bg-amber-50 text-amber-800 border-amber-300';
+      IconComponent = <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />;
+      break;
+
     // En attente / Draft
     case 'pending':
     case 'processing':

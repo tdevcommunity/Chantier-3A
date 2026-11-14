@@ -77,6 +77,48 @@ class NotifyService:
         """Staff-triggered re-send of the ticket e-mail (ignores the paid-order dedup cache)."""
         threading.Thread(target=self._send_confirmation, args=(order_id,), daemon=True).start()
 
+    def on_order_rejected(self, order_id: str) -> None:
+        """Tell the buyer their manual payment was rejected (staff-provided reason)."""
+        threading.Thread(target=self._send_rejection, args=(order_id,), daemon=True).start()
+
+    def _send_rejection(self, order_id: str) -> None:
+        """Send the rejection e-mail with the reason so the buyer can submit a new declaration."""
+        try:
+            ord_row = orders_repo.get_order_by_id(self._store, order_id)
+            ev = events_repo.get_event_by_id(self._store, ord_row.event_id)
+        except Exception as err:
+            log.error("notify: load order/event for rejection: %s", err)
+            return
+        if not self._config.smtp_host or not self._config.smtp_from:
+            log.info("notify: SMTP not configured; skipping rejection e-mail for order %s", order_id)
+            return
+        name = ord_row.buyer_first_name or ord_row.buyer_name or ""
+        reason = ord_row.rejection_reason or "Paiement non retrouvé."
+        ref = ord_row.manual_payment_ref or ""
+        subject = f"Votre paiement n'a pas pu être validé — {ev.title}"
+        plain = (
+            f"Bonjour {name},\n\n"
+            f"Nous n'avons pas pu valider votre paiement (référence déclarée : {ref}) "
+            f"pour {ev.title}.\n\n"
+            f"Motif : {reason}\n\n"
+            "Votre place n'est pas réservée. Vous pouvez refaire votre inscription et "
+            "déclarer à nouveau votre paiement avec la bonne référence.\n"
+        )
+        from html import escape
+
+        html = (
+            f"<p>Bonjour {escape(name)},</p>"
+            f"<p>Nous n'avons pas pu valider votre paiement (référence déclarée : "
+            f"<strong>{escape(ref)}</strong>) pour <strong>{escape(ev.title)}</strong>.</p>"
+            f"<p><strong>Motif :</strong> {escape(reason)}</p>"
+            "<p>Votre place n'est pas réservée. Vous pouvez refaire votre inscription et "
+            "déclarer à nouveau votre paiement avec la bonne référence.</p>"
+        )
+        try:
+            self._send_smtp(ord_row.buyer_email, subject, plain, html)
+        except Exception as err:
+            log.error("notify: rejection send failed order=%s err=%s", order_id, err)
+
     def _send_confirmation(self, order_id: str) -> None:
         """Send confirmation on ``NotifyService``."""
         try:

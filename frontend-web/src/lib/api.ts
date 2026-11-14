@@ -35,6 +35,7 @@ import type {
     AttendeesResponse,
     AdmissionConflictsResponse,
     VerifyPaymentResponse,
+    ManualPaymentOptions,
     ScanBundle,
 } from './api-types.ts';
 
@@ -593,6 +594,8 @@ export interface CreateOrderInput {
     buyer: CreateOrderBuyer;
     provider?: string;
     return_path?: string;
+    /** Déclaration du transfert Mobile Money (provider `manual_momo`). */
+    manual_payment?: { operator: string; reference: string; phone: string };
 }
 
 export interface CreateOrderResponse {
@@ -654,6 +657,17 @@ export const orders = {
      * inventory it had reserved back to sale.
      */
     markFailed: (id: string) => post<MarkOrderResponse>(`/orders/${id}/mark-failed`),
+    /**
+     * POST /api/orders/{id}/validate-manual — admin. Confirme un paiement Mobile Money
+     * manuel : émet les billets et envoie l'e-mail de confirmation au client.
+     */
+    validateManual: (id: string) => post<MarkOrderResponse>(`/orders/${id}/validate-manual`),
+    /**
+     * POST /api/orders/{id}/reject-manual — admin. Rejette la déclaration (motif
+     * obligatoire), libère le stock et prévient le client par e-mail.
+     */
+    rejectManual: (id: string, reason: string) =>
+        post<MarkOrderResponse>(`/orders/${id}/reject-manual`, { reason }),
 };
 
 // ---------------------------------------------------------------------------
@@ -661,16 +675,15 @@ export const orders = {
 // ---------------------------------------------------------------------------
 
 export const payments = {
-    status: (reference: string, veltoTransactionId?: string) =>
-        post<{ payment_status: string; order_status: string }>('/payments/status', {
-            reference,
-            ...(veltoTransactionId ? { velto_transaction_id: veltoTransactionId } : {}),
-        }),
-    verify: (reference: string, email: string, veltoTransactionId?: string) =>
+    /** Numéros marchands et frais de retrait par opérateur pour un montant donné. */
+    manualOptions: (amountMinor: number) =>
+        get<ManualPaymentOptions>(`/payments/manual-options?${new URLSearchParams({ amount_minor: String(amountMinor) }).toString()}`),
+    status: (reference: string) =>
+        post<{ payment_status: string; order_status: string }>('/payments/status', { reference }),
+    verify: (reference: string, email: string) =>
         post<VerifyPaymentResponse>('/payments/verify', {
             reference,
             email: email.trim(),
-            ...(veltoTransactionId ? { velto_transaction_id: veltoTransactionId } : {}),
         }),
     abandon: (reference: string, email: string) =>
         post<{ order: Order; released: boolean }>('/payments/abandon', { reference, email }),

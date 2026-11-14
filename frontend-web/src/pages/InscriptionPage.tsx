@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
+import type { ManualPaymentValue } from '@/components/registration/ManualPaymentStep';
 import { RegistrationWizard } from '@/components/registration/RegistrationWizard';
+import { PASS_TIER_PRICE_MINOR } from '@/lib/festival-storefront';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -13,11 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { resolveLiveCheckoutProduct } from '@/lib/billetterie-storefront';
 import { completeCheckout } from '@/lib/billetterie-checkout';
-import {
-  clearRegistrationDraft,
-  loadRegistrationDraft,
-  type RegistrationFormValues,
-} from '@/lib/registration-form';
+import { clearRegistrationDraft, type RegistrationFormValues } from '@/lib/registration-form';
 import {
   applyPartnerAccentFromQuery,
   isEmbedMode,
@@ -27,16 +25,7 @@ import {
 import { checkoutFailureCopy, logCheckoutDiagnostic } from '@/lib/user-facing-checkout-error';
 import { downloadGuestTicketPdfForOrder } from '@/lib/download-guest-ticket-pdf';
 import { StorefrontBrandHomeLink } from '@/components/storefront/StorefrontBrandHomeLink';
-import { isVeltoReturn, settleVeltoReturnFromUrl } from '@/lib/velto-payment-return';
 import type { BilletterieListingProduct } from '@/lib/static-billetterie-catalog';
-
-const isSafeRedirect = (url: string) => {
-  try {
-    return new URL(url).protocol === 'https:';
-  } catch {
-    return false;
-  }
-};
 
 export default function InscriptionPage() {
   const location = useLocation();
@@ -53,8 +42,6 @@ export default function InscriptionPage() {
 
   const [wizardKey, setWizardKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [confirmingPayment, setConfirmingPayment] = useState(() => isVeltoReturn(searchParams));
-  const veltoReturnHandled = useRef(false);
   const [successOpen, setSuccessOpen] = useState(false);
   const [successTitle, setSuccessTitle] = useState('');
   const [successBody, setSuccessBody] = useState('');
@@ -93,37 +80,11 @@ export default function InscriptionPage() {
     setFailureOpen(true);
   };
 
-  useEffect(() => {
-    if (veltoReturnHandled.current || !isVeltoReturn(searchParams)) return;
-    veltoReturnHandled.current = true;
-    setConfirmingPayment(true);
-    const draftEmail = loadRegistrationDraft()?.values.email.trim() || '';
-    void settleVeltoReturnFromUrl(searchParams, navigate, location.pathname, draftEmail)
-      .then((result) => {
-      if (!result) return;
-      const email = result.buyerEmail.trim() || draftEmail;
-      const ticket =
-        result.outcome === 'paid' && email ? { orderId: result.orderId, email } : null;
-      if (result.outcome === 'paid') {
-        showSuccess(
-          'Paiement confirmé',
-          'Merci ! Votre billet est réservé. Vous recevrez votre confirmation par e-mail dans quelques instants. Pensez à vérifier vos spams.',
-          ticket,
-        );
-      } else if (result.outcome === 'failed' || result.outcome === 'unpaid') {
-        showFailure(new Error('velto_declined'), 'velto_return');
-      } else {
-        showSuccess(
-          'Paiement en cours de validation',
-          'Nous vérifions votre paiement Mobile Money. Aucun billet n’est émis tant que la banque n’a pas confirmé.',
-        );
-      }
-    })
-      .finally(() => setConfirmingPayment(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- une fois par retour Velto (params lus au montage)
-  }, []);
-
-  const handleSubmit = async (values: RegistrationFormValues, active: BilletterieListingProduct) => {
+  const handleSubmit = async (
+    values: RegistrationFormValues,
+    active: BilletterieListingProduct,
+    manualPayment?: ManualPaymentValue,
+  ) => {
     const passTitle = active.title;
     setSubmitting(true);
     try {
@@ -132,6 +93,7 @@ export default function InscriptionPage() {
         eventId: live.event.id,
         ticketType: live.product.ticketType,
         registration: values,
+        manualPayment,
       });
 
       if (outcome.kind === 'free_confirmed') {
@@ -143,23 +105,9 @@ export default function InscriptionPage() {
         return;
       }
 
-      if (outcome.kind === 'paid') {
-        showSuccess(
-          'Paiement confirmé',
-          `Merci ! Votre paiement pour le ${passTitle} est confirmé. Vous recevrez vos billets par e-mail à ${outcome.email}.`,
-          { orderId: outcome.orderId, email: outcome.email },
-        );
-        return;
-      }
-
-      if (outcome.redirectUrl && isSafeRedirect(outcome.redirectUrl)) {
-        window.location.href = outcome.redirectUrl;
-        return;
-      }
-
       showSuccess(
-        'Paiement en attente',
-        `Finalisez votre paiement Mobile Money. Votre billet sera envoyé à ${outcome.email} uniquement après confirmation du paiement.`,
+        'Paiement déclaré — en attente de validation',
+        `Merci ! Nous avons bien reçu votre déclaration de paiement pour le ${passTitle}. Notre équipe va vérifier votre transfert. Votre confirmation et votre billet seront envoyés à ${outcome.email} dès que votre paiement sera validé. Pensez à vérifier vos spams.`,
       );
     } catch (err) {
       showFailure(err);
@@ -238,12 +186,9 @@ export default function InscriptionPage() {
             key={wizardKey}
             passTitle={listing.title}
             isFree={listing.isFree}
-            submitting={submitting || confirmingPayment}
-            submittingLabel={
-              confirmingPayment ? 'Confirmation du paiement et émission du billet…' : undefined
-            }
-            resumeAtSummaryStep={confirmingPayment}
-            onSubmit={(values) => void handleSubmit(values, listing)}
+            amountMinor={PASS_TIER_PRICE_MINOR[listing.checkoutTier]}
+            submitting={submitting}
+            onSubmit={(values, manualPayment) => void handleSubmit(values, listing, manualPayment)}
           />
         </div>
       </main>

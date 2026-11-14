@@ -2,7 +2,7 @@ import React from 'react';
 import { Menu, Search, LogOut, CalendarDays } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { cn } from '../../lib/utils';
+import { adminPath, cn } from '../../lib/utils';
 
 interface HeaderProps {
   onOpenSidebar: () => void;
@@ -75,7 +75,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSidebar, onOpenSearch }) =
             type="button"
             onClick={() => {
               logout();
-              navigate('/login');
+              navigate(adminPath('/login'));
             }}
             title="Déconnexion"
             className="rounded-xl border border-zinc-200 bg-white p-2 text-zinc-600 shadow-sm hover:bg-zinc-50"

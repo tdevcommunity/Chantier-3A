@@ -14,7 +14,7 @@ import { participantsService } from '../services/participants.service';
 import { ordersService } from '../services/orders.service';
 import { ticketsService } from '../services/tickets.service';
 import { useToast } from '../context/ToastContext';
-import { formatMoney, formatDateTime } from '../lib/utils';
+import { adminPath, formatMoney, formatDateTime } from '../lib/utils';
 import { registrationFormDisplayRows } from '@/lib/registration-form';
 import { Participant, Order } from '../types';
 import { useEvent } from '../context/EventContext';
@@ -63,7 +63,7 @@ export const ParticipantDetailPage: React.FC = () => {
         'Inscrit retiré',
         'Les billets sont invalidés au scan. Les données restent visibles dans les exports CSV serveur.',
       );
-      navigate('/participants');
+      navigate(adminPath('/participants'));
     } catch (err) {
       toastError('Retrait impossible', adminUserMessage(err, 'Réessayez dans un instant.'));
     } finally {
@@ -94,7 +94,7 @@ export const ParticipantDetailPage: React.FC = () => {
       <div className="p-12 text-center">
         <h2 className="text-xl font-bold text-slate-800">Inscription introuvable</h2>
         <button
-          onClick={() => navigate('/participants')}
+          onClick={() => navigate(adminPath('/participants'))}
           className="mt-4 px-4 py-2 bg-violet-600 text-white rounded-xl text-sm font-semibold"
         >
           Retour aux inscriptions
@@ -107,7 +107,7 @@ export const ParticipantDetailPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <button
-          onClick={() => navigate('/participants')}
+          onClick={() => navigate(adminPath('/participants'))}
           className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 shadow-sm transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />

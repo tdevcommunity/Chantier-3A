@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Order, OrderStatus } from '../../types';
-import { formatMoney, formatDateTime } from '../../lib/utils';
+import { adminPath, formatMoney, formatDateTime } from '../../lib/utils';
 import { StatusBadge } from '../ui/StatusBadge';
 import { Search, Eye, MoreVertical, ChevronLeft, ChevronRight } from 'lucide-react';
 import { adminTheme } from '../../lib/admin-theme';
@@ -100,7 +100,7 @@ export const RecentOrdersTable: React.FC<RecentOrdersTableProps> = ({ orders }) 
                 <tr
                   key={order.id}
                   className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
-                  onClick={() => navigate(`/orders/${order.id}`)}
+                  onClick={() => navigate(adminPath(`/orders/${order.id}`))}
                 >
                   <td className="py-4 px-6">
                     <div className="flex items-center gap-3">
@@ -130,7 +130,7 @@ export const RecentOrdersTable: React.FC<RecentOrdersTableProps> = ({ orders }) 
                   <td className="py-4 px-6 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       <button
-                        onClick={() => navigate(`/orders/${order.id}`)}
+                        onClick={() => navigate(adminPath(`/orders/${order.id}`))}
                         className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-emerald-700"
                         title="Voir le détail"
                       >

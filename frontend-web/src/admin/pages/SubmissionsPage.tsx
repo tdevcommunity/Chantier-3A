@@ -17,7 +17,7 @@ import {
   submissionRowFromParticipant,
   type SubmissionFilter,
 } from '../lib/registration-submissions';
-import { cn } from '../lib/utils';
+import { adminPath, cn } from '../lib/utils';
 
 const FILTER_LABELS: Record<SubmissionFilter, string> = {
   all: 'Toutes',
@@ -131,7 +131,7 @@ export const SubmissionsPage: React.FC = () => {
           onAction={() => setFilter('all')}
         />
       ) : (
-        <SubmissionsTable rows={rows} onRowClick={(id) => navigate(`/participants/${id}`)} />
+        <SubmissionsTable rows={rows} onRowClick={(id) => navigate(adminPath(`/participants/${id}`))} />
       )}
     </div>
   );

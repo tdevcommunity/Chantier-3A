@@ -5,7 +5,7 @@ import { participantsService } from '../../services/participants.service';
 import { ordersService } from '../../services/orders.service';
 import { ticketsService } from '../../services/tickets.service';
 import { useEvent } from '../../context/EventContext';
-import { formatMoney } from '../../lib/utils';
+import { adminPath, formatMoney } from '../../lib/utils';
 import { AdminTdevLogo } from '../brand/AdminTdevLogo';
 
 interface GlobalSearchModalProps {
@@ -82,7 +82,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
   if (!isOpen) return null;
 
   const navigateTo = (path: string) => {
-    navigate(path);
+    navigate(adminPath(path));
     onClose();
   };
 

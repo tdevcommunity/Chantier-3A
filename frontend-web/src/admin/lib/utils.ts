@@ -1,21 +1,21 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { getAdminRoute } from '@/lib/env';
+import { formatMoney as sharedFormatMoney } from '@/lib/money';
+
+/** Chemin absolu dans le dashboard (préfixé par VITE_ADMIN_ROUTE), pour navigate(). */
+export function adminPath(path: string): string {
+  const base = getAdminRoute() ?? '';
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+}
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Montant en unités mineures ; XOF n'a pas de décimales (5000 = 5 000 F CFA), pas de division par 100. */
 export function formatMoney(minor: number = 0, currency: string = 'XOF'): string {
-  const major = minor / 100;
-  try {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: currency === 'ZAR' ? 'ZAR' : (currency === 'USD' ? 'USD' : 'XOF'),
-      maximumFractionDigits: 0,
-    }).format(major);
-  } catch {
-    return `${major.toLocaleString('fr-FR')} ${currency}`;
-  }
+  return sharedFormatMoney(minor, currency || 'XOF');
 }
 
 export function formatDate(value?: string | null): string {

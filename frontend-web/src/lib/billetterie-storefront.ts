@@ -4,6 +4,7 @@ import { getFestivalEventSlug } from '@/lib/env';
 import { formatMoney } from '@/lib/money';
 import { productKindOf, remainingFor, visibleTicketTypes } from '@/lib/ticket-utils';
 import { WELCOME_PACK_SHOP_URL } from '@/lib/static-billetterie-catalog';
+import { SoldOutError, type CheckoutTierId } from '@/lib/sold-out';
 
 export interface BilletterieProduct {
     ticketType: TicketType;
@@ -137,18 +138,47 @@ function productMatchesCheckoutTier(product: BilletterieProduct, tier: string): 
  * Charge l'API uniquement au checkout (pass gratuit, pass payant).
  * La landing utilise {@link getStaticBilletterieListing} sans appel réseau.
  */
-export async function resolveLiveCheckoutProduct(tier: 'student' | 'vip'): Promise<{
+async function ticketTypeSoldOutForTier(tier: CheckoutTierId): Promise<boolean> {
+    const list = await events.list();
+    const slug = resolveEventSlug(getFestivalEventSlug(), list.events ?? []);
+    if (!slug) return false;
+    const detail = await events.get(slug);
+    const tickets = visibleTicketTypes(detail.ticket_types ?? []).filter(
+        (t) => productKindOf(t) === 'ticket',
+    );
+    const match = tickets.find((t) => t.pass_tier?.toLowerCase() === tier);
+    if (!match) return false;
+    return remainingFor(match) <= 0;
+}
+
+/**
+ * Vérifie le stock live avant d'ouvrir ou d'envoyer le formulaire d'inscription.
+ * Invalide le cache vitrine si demandé (re-scan après échec).
+ */
+export async function ensureCheckoutTierAvailable(
+    tier: CheckoutTierId,
+    opts: { bustCache?: boolean } = {},
+): Promise<{ event: FestivalEvent; product: BilletterieProduct }> {
+    if (opts.bustCache) clearBilletterieStorefrontCache();
+    const data = await loadBilletterieStorefrontCached();
+    const product = data.products.find((p) => productMatchesCheckoutTier(p, tier));
+    if (product) return { event: data.event, product };
+
+    if (await ticketTypeSoldOutForTier(tier)) {
+        throw new SoldOutError(tier);
+    }
+
+    throw new Error(
+        tier === 'student'
+            ? 'Le Pass Festival n’est pas ouvert aux inscriptions pour le moment.'
+            : 'Le Pass Nexus Night n’est pas ouvert aux inscriptions pour le moment.',
+    );
+}
+
+/** @deprecated Préférer {@link ensureCheckoutTierAvailable} */
+export async function resolveLiveCheckoutProduct(tier: CheckoutTierId): Promise<{
     event: FestivalEvent;
     product: BilletterieProduct;
 }> {
-    const data = await loadBilletterieStorefrontCached();
-    const product = data.products.find((p) => productMatchesCheckoutTier(p, tier));
-    if (!product) {
-        throw new Error(
-            tier === 'student'
-                ? 'Le Pass Festival n\'est pas disponible via l\'API pour le moment.'
-                : 'Le Pass Nexus Night n\'est pas disponible via l\'API pour le moment.',
-        );
-    }
-    return { event: data.event, product };
+    return ensureCheckoutTierAvailable(tier);
 }

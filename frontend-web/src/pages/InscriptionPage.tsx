@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { resolveLiveCheckoutProduct } from '@/lib/billetterie-storefront';
+import { ensureCheckoutTierAvailable } from '@/lib/billetterie-storefront';
 import { completeCheckout } from '@/lib/billetterie-checkout';
 import { clearRegistrationDraft, type RegistrationFormValues } from '@/lib/registration-form';
 import {
@@ -23,6 +23,7 @@ import {
   resolveInscriptionListing,
 } from '@/lib/inscription-entry';
 import { checkoutFailureCopy, logCheckoutDiagnostic } from '@/lib/user-facing-checkout-error';
+import { clearStorefrontCacheIfSoldOut } from '@/lib/sold-out';
 import { downloadGuestTicketPdfForOrder } from '@/lib/download-guest-ticket-pdf';
 import { StorefrontBrandHomeLink } from '@/components/storefront/StorefrontBrandHomeLink';
 import type { BilletterieListingProduct } from '@/lib/static-billetterie-catalog';
@@ -55,9 +56,32 @@ export default function InscriptionPage() {
     if (embed) applyPartnerAccentFromQuery(searchParams);
   }, [embed, searchParams]);
 
+  const showFailure = (err: unknown, context = 'checkout') => {
+    logCheckoutDiagnostic(context, err);
+    const copy = checkoutFailureCopy(err);
+    setFailureTitle(copy.title);
+    setFailureBody(copy.body);
+    setFailureOpen(true);
+  };
+
   useEffect(() => {
     setWizardKey((k) => k + 1);
   }, [listing?.listingId]);
+
+  useEffect(() => {
+    if (!listing?.checkoutTier) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await ensureCheckoutTierAvailable(listing.checkoutTier!);
+      } catch (err) {
+        if (!cancelled) showFailure(err, 'stock-check');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [listing?.checkoutTier]);
 
   const showSuccess = (
     title: string,
@@ -72,14 +96,6 @@ export default function InscriptionPage() {
     notifyEmbedParent('tdev-inscription-success', { title, body }, parentOrigin);
   };
 
-  const showFailure = (err: unknown, context = 'checkout') => {
-    logCheckoutDiagnostic(context, err);
-    const copy = checkoutFailureCopy(err);
-    setFailureTitle(copy.title);
-    setFailureBody(copy.body);
-    setFailureOpen(true);
-  };
-
   const handleSubmit = async (
     values: RegistrationFormValues,
     active: BilletterieListingProduct,
@@ -88,7 +104,7 @@ export default function InscriptionPage() {
     const passTitle = active.title;
     setSubmitting(true);
     try {
-      const live = await resolveLiveCheckoutProduct(active.checkoutTier!);
+      const live = await ensureCheckoutTierAvailable(active.checkoutTier!, { bustCache: true });
       const outcome = await completeCheckout({
         eventId: live.event.id,
         ticketType: live.product.ticketType,
@@ -110,6 +126,7 @@ export default function InscriptionPage() {
         `Merci ! Nous avons bien reçu votre déclaration de paiement pour le ${passTitle}. Notre équipe va vérifier votre transfert. Votre confirmation et votre billet seront envoyés à ${outcome.email} dès que votre paiement sera validé. Pensez à vérifier vos spams.`,
       );
     } catch (err) {
+      clearStorefrontCacheIfSoldOut(err);
       showFailure(err);
     } finally {
       setSubmitting(false);

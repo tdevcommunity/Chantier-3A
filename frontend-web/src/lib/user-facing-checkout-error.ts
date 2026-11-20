@@ -1,4 +1,9 @@
 import { ApiError } from '@/lib/api';
+import {
+    CHECKOUT_SOLD_OUT_COPY,
+    SoldOutError,
+    isSoldOutError,
+} from '@/lib/sold-out';
 
 const DEV_HINT_PATTERN = /backend-python|VITE_DEV_API_PROXY|8088|Démarrez|localhost|127\.0\.0\.1/i;
 
@@ -25,10 +30,7 @@ const PAYMENT_NOT_CONFIRMED: CheckoutFailureCopy = {
     body: 'Votre paiement Mobile Money n’a pas encore été confirmé. Aucun billet n’a été créé. Vous pouvez réessayer.',
 };
 
-const SOLD_OUT: CheckoutFailureCopy = {
-    title: 'Pass indisponible',
-    body: 'Ce pass n’est plus disponible pour le moment. Revenez plus tard ou choisissez un autre pass.',
-};
+const SOLD_OUT: CheckoutFailureCopy = CHECKOUT_SOLD_OUT_COPY;
 
 function looksLikeVisitorFrench(text: string): boolean {
     const t = text.trim();
@@ -106,6 +108,9 @@ function copyFromApiError(err: ApiError): CheckoutFailureCopy {
             body: 'Impossible de finaliser cette inscription avec ces informations.',
         };
     }
+    if (err.status === 409 && (err.code === 'sold_out' || err.message.toLowerCase().includes('plus disponible'))) {
+        return SOLD_OUT;
+    }
 
     const infra =
         err.status === 0 ||
@@ -138,6 +143,10 @@ function copyFromApiError(err: ApiError): CheckoutFailureCopy {
 
 /** Messages visiteur pour les popups d'échec (sans jargon technique). */
 export function checkoutFailureCopy(err: unknown): CheckoutFailureCopy {
+    if (isSoldOutError(err) || err instanceof SoldOutError) {
+        return SOLD_OUT;
+    }
+
     if (err instanceof ApiError) {
         return copyFromApiError(err);
     }

@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import type { ManualPaymentValue } from '@/components/registration/ManualPaymentStep';
 import { RegistrationWizard } from '@/components/registration/RegistrationWizard';
-import { resolveLiveCheckoutProduct } from '@/lib/billetterie-storefront';
+import { ensureCheckoutTierAvailable } from '@/lib/billetterie-storefront';
 import { completeCheckout } from '@/lib/billetterie-checkout';
 import { clearRegistrationDraft, type RegistrationFormValues } from '@/lib/registration-form';
 import {
@@ -28,6 +28,7 @@ import {
     type BilletterieListingProduct,
 } from '@/lib/static-billetterie-catalog';
 import { checkoutFailureCopy, logCheckoutDiagnostic } from '@/lib/user-facing-checkout-error';
+import { clearStorefrontCacheIfSoldOut } from '@/lib/sold-out';
 import { StorefrontBrandHomeLink } from '@/components/storefront/StorefrontBrandHomeLink';
 import { TDEV_LOGO_URL } from '@/components/brand/tdev-brand-assets';
 import { downloadGuestTicketPdfForOrder } from '@/lib/download-guest-ticket-pdf';
@@ -55,12 +56,20 @@ export default function App() {
         window.open(url, '_blank', 'noopener,noreferrer');
     };
 
-    const beginCheckout = (listing: BilletterieListingProduct) => {
+    const beginCheckout = async (listing: BilletterieListingProduct) => {
         if (listing.externalUrl) {
             openExternal(listing.externalUrl);
             return;
         }
         if (!listing.checkoutTier) return;
+
+        try {
+            await ensureCheckoutTierAvailable(listing.checkoutTier);
+        } catch (err) {
+            clearStorefrontCacheIfSoldOut(err);
+            showFailure(err, 'stock-check');
+            return;
+        }
 
         setActiveListing(listing);
         setWizardKey((prev) => prev + 1);
@@ -110,7 +119,7 @@ export default function App() {
         const passTitle = activeListing.title;
         setSubmitting(true);
         try {
-            const live = await resolveLiveCheckoutProduct(activeListing.checkoutTier);
+            const live = await ensureCheckoutTierAvailable(activeListing.checkoutTier, { bustCache: true });
             const outcome = await completeCheckout({
                 eventId: live.event.id,
                 ticketType: live.product.ticketType,
@@ -133,6 +142,7 @@ export default function App() {
                 `Merci ! Nous avons bien reçu votre déclaration de paiement pour le ${passTitle}. Notre équipe va vérifier votre transfert. Votre confirmation et votre billet seront envoyés à ${outcome.email} dès que votre paiement sera validé. Pensez à vérifier vos spams.`,
             );
         } catch (err) {
+            clearStorefrontCacheIfSoldOut(err);
             showFailure(err);
         } finally {
             setSubmitting(false);
@@ -265,7 +275,7 @@ export default function App() {
                                         <Button
                                             variant="outline"
                                             className="w-full font-bold h-11"
-                                            onClick={() => beginCheckout(ticket)}
+                                            onClick={() => void beginCheckout(ticket)}
                                         >
                                             Découvrir les goodies
                                         </Button>
@@ -273,7 +283,7 @@ export default function App() {
                                         <Button
                                             variant={billetterieCtaVariant(ticket)}
                                             className={billetterieCtaClass(ticket)}
-                                            onClick={() => beginCheckout(ticket)}
+                                            onClick={() => void beginCheckout(ticket)}
                                         >
                                             {ticket.isFree ? 'Réserver gratuitement' : 'Choisir ce pass'}
                                         </Button>

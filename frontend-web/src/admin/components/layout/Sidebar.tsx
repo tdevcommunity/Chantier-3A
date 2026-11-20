@@ -13,10 +13,12 @@ import {
   UserCog,
   BarChart3,
   Table2,
+  ScanLine,
   ChevronLeft,
   ChevronRight,
   type LucideIcon,
 } from 'lucide-react';
+import { getAdminRoute } from '@/lib/env';
 import { cn } from '../../lib/utils';
 import {
   adminSidebar,
@@ -36,7 +38,7 @@ interface SidebarProps {
   onCollapsedChange: (collapsed: boolean) => void;
 }
 
-type NavItem = { name: string; path: string; icon: LucideIcon };
+type NavItem = { name: string; path: string; icon: LucideIcon; external?: boolean };
 
 const NAV_ITEMS: NavItem[] = [
   { name: 'Vue d’ensemble', path: 'dashboard', icon: LayoutDashboard },
@@ -47,7 +49,8 @@ const NAV_ITEMS: NavItem[] = [
   { name: 'Billets', path: 'tickets', icon: Ticket },
   { name: 'Types de pass', path: 'ticket-types', icon: Tags },
   { name: 'Nexus Night', path: 'nexus-night', icon: Sparkles },
-  { name: 'Scans', path: 'admissions', icon: QrCode },
+  { name: 'Scanner portique', path: 'scanner', icon: ScanLine, external: true },
+  { name: 'Journal des scans', path: 'admissions', icon: QrCode },
   { name: 'Événement', path: 'event', icon: Calendar },
   { name: 'Équipe', path: 'team', icon: UserCog },
 ];
@@ -68,6 +71,46 @@ function NavItemLink({
   compact: boolean;
 }) {
   const Icon = item.icon;
+  const adminRoute = getAdminRoute() || '';
+
+  if (item.external) {
+    const href = `${adminRoute}/${item.path}`;
+    if (compact) {
+      return (
+        <div className="flex justify-center">
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onNavigate}
+            title={item.name}
+            className={cn(
+              'flex h-11 w-11 items-center justify-center rounded-2xl transition-all duration-200',
+              adminSidebar.iconIdle,
+            )}
+            aria-label={item.name}
+          >
+            <Icon className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.75} />
+          </a>
+        </div>
+      );
+    }
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={onNavigate}
+        className={cn(
+          'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+          'text-emerald-800 bg-emerald-50/80 hover:bg-emerald-100/90 ring-1 ring-emerald-200/60',
+        )}
+      >
+        <Icon className="h-[1.15rem] w-[1.15rem] shrink-0" strokeWidth={1.75} />
+        <span className="truncate">{item.name}</span>
+      </a>
+    );
+  }
 
   if (compact) {
     return (

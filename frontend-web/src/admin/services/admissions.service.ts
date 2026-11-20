@@ -143,7 +143,9 @@ export const admissionsService = {
       );
     }
 
-    if (params.result && params.result !== 'all') {
+    if (params.result === 'all') {
+      result = result.filter((a) => a.result !== 'not_scanned');
+    } else if (params.result) {
       result = result.filter((a) => a.result === params.result);
     }
     return result;

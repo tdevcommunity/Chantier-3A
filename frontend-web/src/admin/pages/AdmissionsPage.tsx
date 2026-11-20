@@ -7,6 +7,8 @@ import {
   AlertTriangle,
   XCircle,
   HelpCircle,
+  ExternalLink,
+  Clock,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatCard } from '../components/ui/StatCard';
@@ -20,6 +22,7 @@ import { useOrgRole } from '../context/OrgRoleContext';
 import { canExportAny } from '../lib/org-permissions';
 import { adminUserMessage } from '../lib/admin-user-message';
 import { formatDateTime } from '../lib/utils';
+import { buildScannerUrl, serialSuffixFromDisplay } from '../lib/scanner-url';
 import { Admission, AdmissionResult } from '../types';
 
 export const AdmissionsPage: React.FC = () => {
@@ -77,13 +80,24 @@ export const AdmissionsPage: React.FC = () => {
   };
 
   const count = (result: AdmissionResult) => admissions.filter((admission) => admission.result === result).length;
+  const scannerUrl = buildScannerUrl();
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Contrôle des Admissions & Scans d’Entrée"
-        subtitle="Historique temps réel des scans QR code aux portiques et terminaux mobiles"
+        title="Journal des scans d’entrée"
+        subtitle="Historique des admissions enregistrées au portique (lecture seule — pas d’admission depuis cette page)"
       >
+        <a
+          href={scannerUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold shadow-sm transition-all"
+        >
+          <QrCode className="w-4 h-4" />
+          Ouvrir le scanner portique
+          <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+        </a>
         {showExports ? (
           <button
             onClick={handleExport}
@@ -94,6 +108,25 @@ export const AdmissionsPage: React.FC = () => {
           </button>
         ) : null}
       </PageHeader>
+
+      <div className="rounded-2xl border border-amber-200/80 bg-amber-50/90 px-4 py-3 text-xs text-amber-950">
+        <p className="font-semibold">Pour faire entrer quelqu’un sur le web</p>
+        <p className="mt-1 text-amber-900/90 leading-relaxed">
+          Utilisez le{' '}
+          <a
+            href={scannerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold underline underline-offset-2"
+          >
+            scanner portique
+          </a>{' '}
+          : saisissez les 4 chiffres du pass (<span className="font-mono">TDEV-2026-XXXX</span>) ou
+          recherchez par nom, puis confirmez l’admission. La recherche ci-dessous sert uniquement à
+          consulter le journal ou repérer un inscrit{' '}
+          <span className="font-medium">non composté</span> (filtre dédié).
+        </p>
+      </div>
 
       {/* 4 Stats Cards (Section 16 requirement) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -136,7 +169,7 @@ export const AdmissionsPage: React.FC = () => {
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Nom, e-mail, n° série, portique, terminal…"
+            placeholder="Recherche journal : nom, e-mail, n° série…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all"
@@ -153,6 +186,7 @@ export const AdmissionsPage: React.FC = () => {
           <option value="duplicate">Doublon</option>
           <option value="invalid">Invalide</option>
           <option value="wrong_event">Mauvais événement</option>
+          <option value="not_scanned">Non composté (recherche)</option>
         </select>
       </div>
 
@@ -176,6 +210,7 @@ export const AdmissionsPage: React.FC = () => {
                   <th className="py-3.5 px-6">Résultat</th>
                   <th className="py-3.5 px-6">Remarque / Diagnostic</th>
                   <th className="py-3.5 px-6 text-right">Date & Heure</th>
+                  <th className="py-3.5 px-6 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
@@ -200,7 +235,32 @@ export const AdmissionsPage: React.FC = () => {
                       {a.note || '—'}
                     </td>
                     <td className="py-4 px-6 text-right text-slate-500 font-medium">
-                      {formatDateTime(a.scanned_at)}
+                      {a.result === 'not_scanned' ? (
+                        <span className="inline-flex items-center gap-1 text-slate-400">
+                          <Clock className="w-3.5 h-3.5" />
+                          —
+                        </span>
+                      ) : (
+                        formatDateTime(a.scanned_at)
+                      )}
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      {a.result === 'not_scanned' ? (
+                        <a
+                          href={buildScannerUrl({
+                            mode: 'serial',
+                            suffix: serialSuffixFromDisplay(a.serial || ''),
+                          })}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-800"
+                        >
+                          Admettre
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                   </tr>
                 ))}

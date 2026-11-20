@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, XCircle, AlertTriangle, UserSearch, Hash } from 'lucide-react';
 import { AdminTdevLogo } from '../components/brand/AdminTdevLogo';
 import { gateScanService, type ScanPreview, type ScanResult } from '../services/gate-scan.service';
@@ -32,6 +32,8 @@ export const GateScannerPage: React.FC = () => {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const deepLinkHandled = useRef(false);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -47,12 +49,6 @@ export const GateScannerPage: React.FC = () => {
     })();
   }, [isAuthenticated]);
 
-  if (!adminRoute) return null;
-  if (isLoading) return null;
-  if (!isAuthenticated) {
-    return <Navigate to={`${adminRoute}/login`} replace />;
-  }
-
   const resetFlow = () => {
     setStep('input');
     setPreview(null);
@@ -63,15 +59,16 @@ export const GateScannerPage: React.FC = () => {
     setNameQuery('');
   };
 
-  const runLookupSerial = async () => {
-    if (!eventId || serialSuffix.length < 1) {
+  const runLookupSerial = useCallback(async (overrideSuffix?: string) => {
+    const suffix = (overrideSuffix ?? serialSuffix).replace(/\D/g, '').slice(-4);
+    if (!eventId || suffix.length < 1) {
       setError('Saisissez les 4 chiffres du pass.');
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const res = await gateScanService.lookupSerial(eventId, serialSuffix);
+      const res = await gateScanService.lookupSerial(eventId, suffix);
       if (!res.found || !res.preview) {
         setError(
           res.reason === 'ticket_not_valid'
@@ -87,17 +84,18 @@ export const GateScannerPage: React.FC = () => {
     } finally {
       setBusy(false);
     }
-  };
+  }, [eventId, serialSuffix]);
 
-  const runLookupName = async () => {
-    if (!eventId || nameQuery.trim().length < 3) {
+  const runLookupName = useCallback(async (overrideQuery?: string) => {
+    const query = (overrideQuery ?? nameQuery).trim();
+    if (!eventId || query.length < 3) {
       setError('Saisissez au moins 3 caractères.');
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const res = await gateScanService.lookupName(eventId, nameQuery.trim());
+      const res = await gateScanService.lookupName(eventId, query);
       if (!res.matches?.length) {
         setError('Aucun billet trouvé pour ce nom.');
         return;
@@ -114,7 +112,25 @@ export const GateScannerPage: React.FC = () => {
     } finally {
       setBusy(false);
     }
-  };
+  }, [eventId, nameQuery]);
+
+  useEffect(() => {
+    if (!eventId || deepLinkHandled.current) return;
+    const modeP = searchParams.get('mode');
+    const suffixRaw = searchParams.get('suffix');
+    const q = searchParams.get('q')?.trim() ?? '';
+    if (modeP === 'serial' || modeP === 'name') setMode(modeP);
+    if (suffixRaw) setSerialSuffix(suffixRaw.replace(/\D/g, '').slice(0, 4));
+    if (q) setNameQuery(q);
+
+    if (modeP === 'serial' && suffixRaw?.replace(/\D/g, '')) {
+      deepLinkHandled.current = true;
+      void runLookupSerial(suffixRaw);
+    } else if (modeP === 'name' && q.length >= 3) {
+      deepLinkHandled.current = true;
+      void runLookupName(q);
+    }
+  }, [eventId, searchParams, runLookupSerial, runLookupName]);
 
   const confirmAdmit = async (serial: string) => {
     setBusy(true);
@@ -131,6 +147,12 @@ export const GateScannerPage: React.FC = () => {
   };
 
   const tone = scanResult ? resultTone(scanResult.result) : null;
+
+  if (!adminRoute) return null;
+  if (isLoading) return null;
+  if (!isAuthenticated) {
+    return <Navigate to={`${adminRoute}/login`} replace />;
+  }
 
   return (
     <div className="admin-app min-h-screen bg-[#0f1412] text-white flex flex-col">
@@ -202,7 +224,7 @@ export const GateScannerPage: React.FC = () => {
         {step === 'input' && mode === 'serial' ? (
           <Card
             title="Numéro de pass"
-            hint="Demandez le numéro sous le QR (4 derniers chiffres)."
+            hint={`Saisissez les 4 chiffres affichés sur le pass : ${PASS_PREFIX}XXXX`}
           >
             <div className="flex items-center gap-2">
               <span className="text-lg font-mono text-emerald-400 shrink-0">{PASS_PREFIX}</span>
@@ -296,6 +318,12 @@ export const GateScannerPage: React.FC = () => {
               <p className="text-sm font-mono text-white/60">{scanResult.serial}</p>
             ) : null}
             <PrimaryButton onClick={resetFlow}>Participant suivant</PrimaryButton>
+            <Link
+              to={`${adminRoute}/admissions`}
+              className="block text-center text-sm text-white/65 underline underline-offset-2 hover:text-white"
+            >
+              Voir le journal des scans
+            </Link>
           </div>
         ) : null}
 
@@ -305,9 +333,12 @@ export const GateScannerPage: React.FC = () => {
           </p>
         ) : null}
 
-        <p className="text-center text-xs text-white/40">
-          <Link to={`${adminRoute}/login`} className="underline hover:text-white/70">
-            Retour espace staff
+        <p className="text-center text-xs text-white/40 space-y-1">
+          <Link to={`${adminRoute}/admissions`} className="block underline hover:text-white/70">
+            Journal des scans (historique)
+          </Link>
+          <Link to={`${adminRoute}/login`} className="block underline hover:text-white/70">
+            Déconnexion / espace staff
           </Link>
         </p>
       </main>

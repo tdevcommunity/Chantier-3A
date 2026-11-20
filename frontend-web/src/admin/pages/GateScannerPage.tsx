@@ -32,8 +32,11 @@ export const GateScannerPage: React.FC = () => {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nameSuggestions, setNameSuggestions] = useState<ScanPreview[]>([]);
+  const [suggestLoading, setSuggestLoading] = useState(false);
   const [searchParams] = useSearchParams();
   const deepLinkHandled = useRef(false);
+  const nameSuggestRequest = useRef(0);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -57,6 +60,16 @@ export const GateScannerPage: React.FC = () => {
     setError(null);
     setSerialSuffix('');
     setNameQuery('');
+    setNameSuggestions([]);
+    setSuggestLoading(false);
+  };
+
+  const pickNameMatch = (match: ScanPreview) => {
+    setPreview(match);
+    setNameMatches([]);
+    setNameSuggestions([]);
+    setStep('confirm');
+    setError(null);
   };
 
   const runLookupSerial = useCallback(async (overrideSuffix?: string) => {
@@ -101,11 +114,11 @@ export const GateScannerPage: React.FC = () => {
         return;
       }
       if (res.matches.length === 1) {
-        setPreview(res.matches[0]!);
-        setStep('confirm');
+        pickNameMatch(res.matches[0]!);
         return;
       }
       setNameMatches(res.matches);
+      setNameSuggestions([]);
       setStep('confirm');
     } catch {
       setError('Recherche impossible. Réessayez.');
@@ -131,6 +144,35 @@ export const GateScannerPage: React.FC = () => {
       void runLookupName(q);
     }
   }, [eventId, searchParams, runLookupSerial, runLookupName]);
+
+  useEffect(() => {
+    if (mode !== 'name' || step !== 'input' || !eventId) {
+      setNameSuggestions([]);
+      return;
+    }
+    const query = nameQuery.trim();
+    if (query.length < 3) {
+      setNameSuggestions([]);
+      setSuggestLoading(false);
+      return;
+    }
+    const requestId = ++nameSuggestRequest.current;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setSuggestLoading(true);
+        try {
+          const res = await gateScanService.lookupName(eventId, query);
+          if (nameSuggestRequest.current !== requestId) return;
+          setNameSuggestions(res.matches || []);
+        } catch {
+          if (nameSuggestRequest.current === requestId) setNameSuggestions([]);
+        } finally {
+          if (nameSuggestRequest.current === requestId) setSuggestLoading(false);
+        }
+      })();
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [nameQuery, eventId, mode, step]);
 
   const confirmAdmit = async (serial: string) => {
     setBusy(true);
@@ -257,16 +299,37 @@ export const GateScannerPage: React.FC = () => {
         ) : null}
 
         {step === 'input' && mode === 'name' ? (
-          <Card title="Recherche par nom" hint="Prénom, nom ou les deux.">
-            <input
-              type="search"
-              value={nameQuery}
-              onChange={(e) => setNameQuery(e.target.value)}
-              className="w-full rounded-xl border border-white/20 bg-black/30 px-4 py-3 text-base"
-              placeholder="Ex. Kouassi Ama"
-            />
+          <Card
+            title="Recherche par nom"
+            hint="Dès 3 lettres, les noms proches s’affichent — touchez celui du participant, puis confirmez."
+          >
+            <div className="relative">
+              <input
+                type="search"
+                value={nameQuery}
+                onChange={(e) => setNameQuery(e.target.value)}
+                className="w-full rounded-xl border border-white/20 bg-black/30 px-4 py-3 text-base"
+                placeholder="Ex. Kouassi ou Tresor"
+                autoComplete="off"
+              />
+              {suggestLoading ? (
+                <p className="mt-2 text-xs text-white/45">Recherche des noms…</p>
+              ) : null}
+              {!suggestLoading && nameQuery.trim().length >= 3 && nameSuggestions.length === 0 ? (
+                <p className="mt-2 text-xs text-white/45">Aucun billet pour cette saisie.</p>
+              ) : null}
+              {nameSuggestions.length > 0 ? (
+                <ul className="mt-2 max-h-[min(50vh,280px)] overflow-y-auto rounded-xl border border-white/15 bg-[#0a0e0c] divide-y divide-white/10">
+                  {nameSuggestions.map((m) => (
+                    <li key={m.ticket_id}>
+                      <NameSuggestionButton match={m} onPick={() => pickNameMatch(m)} />
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
             <PrimaryButton disabled={busy || !eventId} onClick={() => void runLookupName()}>
-              {busy ? 'Recherche…' : 'Rechercher'}
+              {busy ? 'Recherche…' : 'Valider la recherche'}
             </PrimaryButton>
           </Card>
         ) : null}
@@ -287,10 +350,7 @@ export const GateScannerPage: React.FC = () => {
               <button
                 key={m.ticket_id}
                 type="button"
-                onClick={() => {
-                  setPreview(m);
-                  setNameMatches([]);
-                }}
+                onClick={() => pickNameMatch(m)}
                 className="w-full text-left rounded-xl border border-white/15 bg-white/5 p-4 hover:bg-white/10"
               >
                 <p className="font-semibold">{m.holder_name}</p>
@@ -375,6 +435,35 @@ function Card({
       </div>
       {children}
     </section>
+  );
+}
+
+function NameSuggestionButton({
+  match,
+  onPick,
+}: {
+  match: ScanPreview;
+  onPick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      className="w-full px-4 py-3 text-left hover:bg-white/10 active:bg-white/15 transition-colors"
+    >
+      <p className="font-semibold text-white">{match.holder_name || '—'}</p>
+      <p className="mt-0.5 text-[11px] text-white/55">
+        <span className="font-mono text-emerald-300/90">{match.serial}</span>
+        {' · '}
+        {match.pass_label}
+      </p>
+      {match.email_masked ? (
+        <p className="mt-0.5 text-[11px] text-white/45">{match.email_masked}</p>
+      ) : null}
+      {match.admitted ? (
+        <p className="mt-1 text-[10px] font-medium text-amber-300/90">Déjà admis</p>
+      ) : null}
+    </button>
   );
 }
 

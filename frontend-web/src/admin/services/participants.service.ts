@@ -49,6 +49,21 @@ function parseRegistration(order: Record<string, unknown>): OrderRegistrationApi
   return { ...reg, form };
 }
 
+function parseRegistrationFromTicket(ticket: Record<string, unknown>): OrderRegistrationApi {
+  const rawForm = ticket.registration_form;
+  const form =
+    rawForm && typeof rawForm === 'object' && !Array.isArray(rawForm)
+      ? (rawForm as Record<string, unknown>)
+      : {};
+  return {
+    first_name: String(ticket.first_name || form.first_name || ''),
+    last_name: String(ticket.last_name || form.last_name || ''),
+    email: String(ticket.email || form.email || ''),
+    school_name: String(ticket.school_name || form.school_program || ''),
+    form,
+  };
+}
+
 function ticketStatusFromRow(t: Record<string, unknown>): TicketStatus {
   const s = String(t.status || 'valid');
   if (s === 'void' || s === 'refunded') return s;
@@ -61,14 +76,22 @@ export const participantsService = {
     eventId?: string | null,
   ): Promise<{ data: Participant[]; total: number }> {
     const id = requireEventId(eventId ?? null);
-    const [attendeesRes, ordersRes] = await Promise.all([
+    const [attendeesSettled, ordersSettled] = await Promise.allSettled([
       apiFetch<{ attendees: Record<string, unknown>[] }>(`/events/${id}/attendees`),
       apiFetch<{ orders: Record<string, unknown>[] }>(`/events/${id}/orders`),
     ]);
 
-    const orderById = new Map(
-      (ordersRes.orders || []).map((o) => [String(o.id), o as Record<string, unknown>]),
-    );
+    if (attendeesSettled.status === 'rejected') {
+      throw attendeesSettled.reason;
+    }
+    const attendeesRes = attendeesSettled.value;
+
+    const orderById = new Map<string, Record<string, unknown>>();
+    if (ordersSettled.status === 'fulfilled') {
+      for (const o of ordersSettled.value.orders || []) {
+        orderById.set(String(o.id), o as Record<string, unknown>);
+      }
+    }
 
     const ticketsByOrder = new Map<string, Record<string, unknown>[]>();
     for (const a of attendeesRes.attendees || []) {
@@ -81,22 +104,22 @@ export const participantsService = {
     let participants: Participant[] = [];
 
     for (const [orderId, tickets] of ticketsByOrder) {
-      const order = orderById.get(orderId) || {};
-      const reg = parseRegistration(order);
+      const order = orderById.get(orderId);
+      const primary = tickets[0]!;
+      const reg = order ? parseRegistration(order) : parseRegistrationFromTicket(primary);
       const form = reg.form || {};
       const passNames = [...new Set(tickets.map((t) => String(t.ticket_type_name || t.pass_type || 'Pass Festival')))];
       const serials = tickets.map((t) => String(t.serial || '')).filter(Boolean);
       const ticketStatuses = tickets.map((t) => ticketStatusFromRow(t));
       const isRevoked =
         ticketStatuses.length > 0 && ticketStatuses.every((s) => s !== 'valid');
-      const primary = tickets[0]!;
       const passName = passNames.join(' + ');
       const firstName = String(form.first_name || reg.first_name || primary.first_name || '');
       const lastName = String(form.last_name || reg.last_name || primary.last_name || '');
       const displayName =
         `${firstName} ${lastName}`.trim() ||
         String(primary.holder_name || '').trim() ||
-        String(order.buyer_name || '');
+        String((order && order.buyer_name) || primary.buyer_name || '');
 
       participants.push({
         id: orderId,
@@ -106,17 +129,27 @@ export const participantsService = {
         name: displayName,
         first_name: firstName,
         last_name: lastName,
-        email: String(form.email || reg.email || primary.email || order.buyer_email || ''),
+        email: String(
+          form.email || reg.email || primary.email || (order ? order.buyer_email : '') || '',
+        ),
         phone: String(form.phone ?? ''),
         city: String(form.city ?? ''),
         school: String(form.school_program || reg.school_name || primary.school_name || ''),
         serial: serials.join(', '),
         pass_name: passName,
         pass_tier: ((primary.pass_type as string) || null) as PassTier | null,
-        order_status: String(order.status || '') as OrderStatus,
-        amount_minor: Number(order.total_minor || 0),
-        currency: String(order.currency || 'XOF'),
-        issued_at: String(order.paid_at || order.created_at || primary.scanned_at || ''),
+        order_status: String(
+          (order && order.status) || primary.order_status || '',
+        ) as OrderStatus,
+        amount_minor: Number((order && order.total_minor) || primary.total_minor || 0),
+        currency: String((order && order.currency) || primary.currency || 'XOF'),
+        issued_at: String(
+          (order && (order.paid_at || order.created_at)) ||
+            primary.paid_at ||
+            primary.order_created_at ||
+            primary.scanned_at ||
+            '',
+        ),
         is_nexus: passNames.some((n) => isNexusName(n)),
         has_goodies: passName.toLowerCase().includes('goodies') || passName.toLowerCase().includes('welcome'),
         goodies_details: undefined,

@@ -40,6 +40,11 @@ def can_manage_org(st: Store, user_id: str, org_id: str, min_role: str) -> bool:
     return role_meets(role, min_role)
 
 
+def can_manage_event_as_owner(st: Store, user_id: str, event_id: str) -> bool:
+    """Organizer actions reserved to the org owner (exports, catalog config, orders list)."""
+    return can_manage_event(st, user_id, event_id, ROLE_OWNER)
+
+
 def can_manage_event(st: Store, user_id: str, event_id: str, min_role: str) -> bool:
     """Check if the user can manage the event via its owning org membership."""
     try:

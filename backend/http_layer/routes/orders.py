@@ -499,8 +499,8 @@ def guest_ticket_pdf(
 @router.get("/events/{event_id}/orders")
 def list_event_orders(event_id: str, state: AppState = Depends(require_user)):
     """List event orders."""
-    if not rbac.can_manage_event(state.store, state.current_user.id, event_id, rbac.ROLE_ADMIN):
-        return json_error(403, "forbidden", "you are not an admin/owner of this event's org")
+    if not rbac.can_manage_event_as_owner(state.store, state.current_user.id, event_id):
+        return json_error(403, "forbidden", "order list is reserved to organization owners")
     orders = state.services.orders.list_for_event(event_id)
     views = []
     for ord in orders:

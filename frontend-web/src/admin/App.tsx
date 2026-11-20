@@ -22,6 +22,9 @@ import { EventSettingsPage } from './pages/EventSettingsPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
 import { StaffPortal } from './pages/StaffPortal';
+import { GateScannerPage } from './pages/GateScannerPage';
+import { OrgRoleProvider } from './context/OrgRoleContext';
+import { RequireOwnerRoute } from './components/auth/RequireOwnerRoute';
 
 import { getAdminRoute } from '@/lib/env';
 import { STOREFRONT_THEME_CLASS } from '@/components/storefront/StorefrontTheme';
@@ -53,6 +56,21 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+const ScannerAuthRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, isLoading } = useAuth();
+  const adminRoute = getAdminRoute();
+
+  if (isLoading) {
+    return <AdminLoadingScreen message="Chargement du scanner…" />;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to={`${adminRoute}/login`} replace />;
+  }
+
+  return <>{children}</>;
+};
+
 export const AdminApp: React.FC = () => {
   useEffect(() => {
     let meta = document.querySelector('meta[name="robots"]');
@@ -71,8 +89,17 @@ export const AdminApp: React.FC = () => {
     <ToastProvider>
       <AuthProvider>
         <EventProvider>
+          <OrgRoleProvider>
           <Routes>
             <Route path="login" element={<LoginPage />} />
+            <Route
+              path="scanner"
+              element={
+                <ScannerAuthRoute>
+                  <GateScannerPage />
+                </ScannerAuthRoute>
+              }
+            />
             <Route path="auth/callback" element={<AuthCallbackPage />} />
             <Route path="accept-invite" element={<AcceptInvitePage />} />
 
@@ -86,21 +113,64 @@ export const AdminApp: React.FC = () => {
             >
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<DashboardPage />} />
-              <Route path="event" element={<EventSettingsPage />} />
+              <Route
+                path="event"
+                element={
+                  <RequireOwnerRoute segment="event">
+                    <EventSettingsPage />
+                  </RequireOwnerRoute>
+                }
+              />
               <Route path="participants" element={<ParticipantsPage />} />
               <Route path="participants/:id" element={<ParticipantDetailPage />} />
               <Route path="insights" element={<InsightsPage />} />
-              <Route path="submissions" element={<SubmissionsPage />} />
-              <Route path="orders" element={<OrdersPage />} />
-              <Route path="orders/:id" element={<OrderDetailPage />} />
-              <Route path="tickets" element={<TicketsPage />} />
-              <Route path="ticket-types" element={<TicketTypesPage />} />
+              <Route
+                path="submissions"
+                element={
+                  <RequireOwnerRoute segment="submissions">
+                    <SubmissionsPage />
+                  </RequireOwnerRoute>
+                }
+              />
+              <Route
+                path="orders"
+                element={
+                  <RequireOwnerRoute segment="orders">
+                    <OrdersPage />
+                  </RequireOwnerRoute>
+                }
+              />
+              <Route
+                path="orders/:id"
+                element={
+                  <RequireOwnerRoute segment="orders">
+                    <OrderDetailPage />
+                  </RequireOwnerRoute>
+                }
+              />
+              <Route
+                path="tickets"
+                element={
+                  <RequireOwnerRoute segment="tickets">
+                    <TicketsPage />
+                  </RequireOwnerRoute>
+                }
+              />
+              <Route
+                path="ticket-types"
+                element={
+                  <RequireOwnerRoute segment="ticket-types">
+                    <TicketTypesPage />
+                  </RequireOwnerRoute>
+                }
+              />
               <Route path="nexus-night" element={<NexusNightPage />} />
               <Route path="admissions" element={<AdmissionsPage />} />
               <Route path="team" element={<UsersPage />} />
               <Route path="*" element={<Navigate to="dashboard" replace />} />
             </Route>
           </Routes>
+          </OrgRoleProvider>
         </EventProvider>
       </AuthProvider>
     </ToastProvider>

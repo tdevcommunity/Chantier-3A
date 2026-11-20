@@ -69,8 +69,8 @@ def get_event(event_id: str, state: AppState = Depends(get_app_state)):
 @router.patch("/{event_id}")
 def patch_event(event_id: str, body: dict, state: AppState = Depends(require_user)):
     """Patch event."""
-    if not rbac.can_manage_event(state.store, state.current_user.id, event_id, rbac.ROLE_ADMIN):
-        return json_error(403, "forbidden", "you are not an admin/owner of this event's org")
+    if not rbac.can_manage_event_as_owner(state.store, state.current_user.id, event_id):
+        return json_error(403, "forbidden", "event settings are reserved to organization owners")
     try:
         ev = events_svc.update(state.store, event_id, body)
     except NotFoundError:
@@ -87,8 +87,8 @@ def patch_event(event_id: str, body: dict, state: AppState = Depends(require_use
 @router.delete("/{event_id}", status_code=204)
 def delete_event_route(event_id: str, state: AppState = Depends(require_user)):
     """Delete event route."""
-    if not rbac.can_manage_event(state.store, state.current_user.id, event_id, rbac.ROLE_ADMIN):
-        return json_error(403, "forbidden", "you are not an admin/owner of this event's org")
+    if not rbac.can_manage_event_as_owner(state.store, state.current_user.id, event_id):
+        return json_error(403, "forbidden", "event settings are reserved to organization owners")
     try:
         events_svc.delete_event(state.store, event_id)
     except NotFoundError:
@@ -103,8 +103,8 @@ def delete_event_route(event_id: str, state: AppState = Depends(require_user)):
 @router.post("/{event_id}/publish")
 def publish_event(event_id: str, state: AppState = Depends(require_user)):
     """Publish event."""
-    if not rbac.can_manage_event(state.store, state.current_user.id, event_id, rbac.ROLE_ADMIN):
-        return json_error(403, "forbidden", "you are not an admin/owner of this event's org")
+    if not rbac.can_manage_event_as_owner(state.store, state.current_user.id, event_id):
+        return json_error(403, "forbidden", "event settings are reserved to organization owners")
     try:
         ev = events_svc.publish(state.store, event_id)
     except NotFoundError:
@@ -133,8 +133,8 @@ def event_stats(event_id: str, state: AppState = Depends(require_user)):
 @router.get("/{event_id}/ticket-types")
 def list_ticket_types(event_id: str, state: AppState = Depends(require_user)):
     """List ticket types."""
-    if not rbac.can_manage_event(state.store, state.current_user.id, event_id, rbac.ROLE_ADMIN):
-        return json_error(403, "forbidden", "you are not an admin/owner of this event's org")
+    if not rbac.can_manage_event_as_owner(state.store, state.current_user.id, event_id):
+        return json_error(403, "forbidden", "ticket types are reserved to organization owners")
     try:
         types = events_svc.list_ticket_types(state.store, event_id)
     except Exception:
@@ -145,8 +145,8 @@ def list_ticket_types(event_id: str, state: AppState = Depends(require_user)):
 @router.post("/{event_id}/ticket-types")
 def create_ticket_type(event_id: str, body: dict, state: AppState = Depends(require_user)):
     """Create ticket type."""
-    if not rbac.can_manage_event(state.store, state.current_user.id, event_id, rbac.ROLE_ADMIN):
-        return json_error(403, "forbidden", "you are not an admin/owner of this event's org")
+    if not rbac.can_manage_event_as_owner(state.store, state.current_user.id, event_id):
+        return json_error(403, "forbidden", "ticket types are reserved to organization owners")
     try:
         tt = events_svc.create_ticket_type(state.store, event_id, body)
     except events_svc.InvalidInput as err:
@@ -177,8 +177,8 @@ def patch_ticket_type(tt_id: str, body: dict, state: AppState = Depends(require_
         tt = tt_repo.get_ticket_type_by_id(state.store, tt_id)
     except NotFoundError:
         return json_error(404, "not_found", "ticket type not found")
-    if not rbac.can_manage_event(state.store, state.current_user.id, tt.event_id, rbac.ROLE_ADMIN):
-        return json_error(403, "forbidden", "you are not an admin/owner of this event's org")
+    if not rbac.can_manage_event_as_owner(state.store, state.current_user.id, tt.event_id):
+        return json_error(403, "forbidden", "ticket types are reserved to organization owners")
     try:
         out = events_svc.update_ticket_type(state.store, tt_id, body)
     except events_svc.InvalidInput as err:
@@ -199,8 +199,8 @@ def delete_ticket_type_route(tt_id: str, state: AppState = Depends(require_user)
         tt = tt_repo.get_ticket_type_by_id(state.store, tt_id)
     except NotFoundError:
         return json_error(404, "not_found", "ticket type not found")
-    if not rbac.can_manage_event(state.store, state.current_user.id, tt.event_id, rbac.ROLE_ADMIN):
-        return json_error(403, "forbidden", "you are not an admin/owner of this event's org")
+    if not rbac.can_manage_event_as_owner(state.store, state.current_user.id, tt.event_id):
+        return json_error(403, "forbidden", "ticket types are reserved to organization owners")
     try:
         events_svc.delete_ticket_type(state.store, tt_id)
     except events_svc.TicketTypeHasSales as err:

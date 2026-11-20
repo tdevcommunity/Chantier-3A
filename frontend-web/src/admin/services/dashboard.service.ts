@@ -7,10 +7,27 @@ function isNexusPass(tt: { name?: string; pass_tier?: string | null }): boolean 
   return tt.pass_tier === 'vip' || name.includes('nexus');
 }
 
+function isNexusRowName(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.includes('nexus') || n.includes('vip');
+}
+
+function emptySalesWeek(): { date: string; tickets: number }[] {
+  const counts: Record<string, number> = {};
+  const today = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+    counts[key] = 0;
+  }
+  return Object.entries(counts).map(([date, tickets]) => ({ date, tickets }));
+}
+
 export const dashboardService = {
   async getKPIs(eventId?: string | null): Promise<DashboardKPIData> {
     const id = requireEventId(eventId ?? null);
-    const [statsRes, ordersRes, ttRes] = await Promise.all([
+    const [statsSettled, ordersSettled, ttSettled] = await Promise.allSettled([
       apiFetch<{
         stats: {
           sold: number;
@@ -23,6 +40,7 @@ export const dashboardService = {
             quantity_total: number;
             sold: number;
             revenue_minor: number;
+            pass_tier?: string | null;
           }[];
         };
       }>(`/events/${id}/stats`),
@@ -30,8 +48,13 @@ export const dashboardService = {
       apiFetch<{ ticket_types: TicketType[] }>(`/events/${id}/ticket-types`),
     ]);
 
-    const st = statsRes.stats;
-    const ticketTypes = ttRes.ticket_types || [];
+    if (statsSettled.status === 'rejected') {
+      throw statsSettled.reason;
+    }
+    const st = statsSettled.value.stats;
+
+    const ticketTypes =
+      ttSettled.status === 'fulfilled' ? ttSettled.value.ticket_types || [] : [];
     const typeById = new Map(ticketTypes.map((t) => [t.id, t]));
 
     let nexusCount = 0;
@@ -40,13 +63,19 @@ export const dashboardService = {
     for (const row of st.by_type || []) {
       ticketsTotal += row.quantity_total || 0;
       const tt = typeById.get(row.ticket_type_id);
-      if (tt && isNexusPass(tt)) {
+      const nexus =
+        (tt && isNexusPass(tt)) || isNexusRowName(row.name || '') || row.pass_tier === 'vip';
+      if (nexus) {
         nexusCount += row.sold || 0;
         nexusRevenue += row.revenue_minor || 0;
       }
     }
 
-    const pending = (ordersRes.orders || []).filter((o) => o.status === 'pending').length;
+    let pending = 0;
+    if (ordersSettled.status === 'fulfilled') {
+      pending = (ordersSettled.value.orders || []).filter((o) => o.status === 'pending').length;
+    }
+
     const control = st.admitted_by_control || {};
     const scansTotal = Object.values(control).reduce((acc, n) => acc + (n || 0), 0);
 
@@ -66,37 +95,45 @@ export const dashboardService = {
 
   async getSalesChart(eventId?: string | null): Promise<{ date: string; tickets: number }[]> {
     const id = requireEventId(eventId ?? null);
-    const res = await apiFetch<{ orders: { status: string; created_at: string }[] }>(
-      `/events/${id}/orders`,
-    );
-    const counts: Record<string, number> = {};
-    const today = new Date();
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const key = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
-      counts[key] = 0;
+    const base = emptySalesWeek();
+    try {
+      const res = await apiFetch<{ orders: { status: string; created_at: string }[] }>(
+        `/events/${id}/orders`,
+      );
+      const counts: Record<string, number> = Object.fromEntries(base.map((r) => [r.date, 0]));
+      const today = new Date();
+      (res.orders || []).forEach((o) => {
+        if (o.status !== 'paid' && o.status !== 'free_confirmed') return;
+        const created = new Date(o.created_at);
+        const diffDays = Math.floor((today.getTime() - created.getTime()) / 86400000);
+        if (diffDays >= 0 && diffDays < 7) {
+          const key = created.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+          if (key in counts) counts[key]++;
+        }
+      });
+      return Object.entries(counts).map(([date, tickets]) => ({ date, tickets }));
+    } catch {
+      return base;
     }
-    (res.orders || []).forEach((o) => {
-      if (o.status !== 'paid' && o.status !== 'free_confirmed') return;
-      const created = new Date(o.created_at);
-      const diffDays = Math.floor((today.getTime() - created.getTime()) / 86400000);
-      if (diffDays >= 0 && diffDays < 7) {
-        const key = created.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
-        if (key in counts) counts[key]++;
-      }
-    });
-    return Object.entries(counts).map(([date, tickets]) => ({ date, tickets }));
   },
 
   async getTicketDistribution(
     eventId?: string | null,
   ): Promise<{ name: string; value: number }[]> {
     const id = requireEventId(eventId ?? null);
-    const res = await apiFetch<{ ticket_types: TicketType[] }>(`/events/${id}/ticket-types`);
-    return (res.ticket_types || [])
-      .filter((tt) => tt.product_kind === 'ticket' && (tt.quantity_sold || 0) > 0)
-      .map((tt) => ({ name: tt.name, value: tt.quantity_sold || 0 }));
+    try {
+      const res = await apiFetch<{ ticket_types: TicketType[] }>(`/events/${id}/ticket-types`);
+      return (res.ticket_types || [])
+        .filter((tt) => tt.product_kind === 'ticket' && (tt.quantity_sold || 0) > 0)
+        .map((tt) => ({ name: tt.name, value: tt.quantity_sold || 0 }));
+    } catch {
+      const stats = await apiFetch<{
+        stats: { by_type: { name: string; sold: number }[] };
+      }>(`/events/${id}/stats`);
+      return (stats.stats.by_type || [])
+        .filter((row) => (row.sold || 0) > 0)
+        .map((row) => ({ name: row.name, value: row.sold || 0 }));
+    }
   },
 
   async getAdmissionStats(

@@ -18,6 +18,8 @@ import { ordersService } from '../services/orders.service';
 import { exportsService } from '../services/exports.service';
 import { useAuth } from '../context/AuthContext';
 import { useEvent } from '../context/EventContext';
+import { useOrgRole } from '../context/OrgRoleContext';
+import { canExportAny } from '../lib/org-permissions';
 import { useToast } from '../context/ToastContext';
 import { formatMoney } from '../lib/utils';
 import { adminTheme } from '../lib/admin-theme';
@@ -26,7 +28,9 @@ import { DashboardKPIData, TicketType, Order } from '../types';
 export const DashboardPage: React.FC = () => {
   const { user } = useAuth();
   const { eventId } = useEvent();
+  const { orgRole } = useOrgRole();
   const { success, error } = useToast();
+  const showExports = canExportAny(orgRole);
 
   const [kpis, setKpis] = useState<DashboardKPIData | null>(null);
   const [salesData, setSalesData] = useState<any[]>([]);
@@ -84,10 +88,12 @@ export const DashboardPage: React.FC = () => {
             Suivez inscriptions, soirée Nexus et contrôles d’entrée
           </p>
         </div>
-        <button type="button" onClick={handleExport} className={adminTheme.btnSecondary}>
-          <Download className="h-4 w-4 text-zinc-500" />
-          Exporter le rapport
-        </button>
+        {showExports ? (
+          <button type="button" onClick={handleExport} className={adminTheme.btnSecondary}>
+            <Download className="h-4 w-4 text-zinc-500" />
+            Exporter le rapport
+          </button>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -136,9 +142,9 @@ export const DashboardPage: React.FC = () => {
         <TicketDonutChart data={distribution} total={kpis?.tickets_sold || 0} />
       </div>
 
-      <PassesProgressCard ticketTypes={ticketTypes} />
+      {ticketTypes.length > 0 ? <PassesProgressCard ticketTypes={ticketTypes} /> : null}
 
-      <RecentOrdersTable orders={orders} />
+      {orders.length > 0 ? <RecentOrdersTable orders={orders} /> : null}
     </div>
   );
 };

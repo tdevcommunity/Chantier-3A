@@ -16,8 +16,8 @@ router = APIRouter(tags=["exports"])
 @router.get("/events/{event_id}/exports/participants.csv")
 def export_participants_csv(event_id: str, state: AppState = Depends(require_user)):
     """Download all participant registrations for an event."""
-    if not rbac.can_manage_event(state.store, state.current_user.id, event_id, rbac.ROLE_ADMIN):
-        return json_error(403, "forbidden", "you are not an admin/owner of this event's org")
+    if not rbac.can_manage_event_as_owner(state.store, state.current_user.id, event_id):
+        return json_error(403, "forbidden", "export is reserved to organization owners")
     body, count = build_participants_csv(state.store, event_id)
     if count == 0:
         return json_error(404, "not_found", "no registrations to export")

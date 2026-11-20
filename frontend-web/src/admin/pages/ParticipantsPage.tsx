@@ -17,10 +17,14 @@ import { ExportEmptyError } from '../lib/export';
 import { adminMessages, adminUserMessage } from '../lib/admin-user-message';
 import { useToast } from '../context/ToastContext';
 import { useEvent } from '../context/EventContext';
+import { useOrgRole } from '../context/OrgRoleContext';
+import { canExportAny } from '../lib/org-permissions';
 import { Participant } from '../types';
 
 export const ParticipantsPage: React.FC = () => {
   const { eventId } = useEvent();
+  const { orgRole } = useOrgRole();
+  const showExports = canExportAny(orgRole);
   const navigate = useNavigate();
   const { success, error: toastError } = useToast();
 
@@ -103,22 +107,26 @@ export const ParticipantsPage: React.FC = () => {
         title="Inscriptions participants"
         subtitle="Aperçu rapide : consultez une fiche ou exportez le formulaire complet (CSV ou PDF)."
       >
-        <button
-          onClick={() => void handleExportCsv()}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-sm transition-all"
-        >
-          <Download className="w-4 h-4 text-slate-500" />
-          Export CSV complet
-        </button>
+        {showExports ? (
+          <>
+            <button
+              onClick={() => void handleExportCsv()}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-sm transition-all"
+            >
+              <Download className="w-4 h-4 text-slate-500" />
+              Export CSV complet
+            </button>
 
-        <button
-          onClick={() => void handleExportPdf()}
-          disabled={exportingPdf}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-xs font-semibold shadow-sm transition-all"
-        >
-          <FileText className="w-4 h-4" />
-          {exportingPdf ? 'Génération…' : 'Export PDF complet'}
-        </button>
+            <button
+              onClick={() => void handleExportPdf()}
+              disabled={exportingPdf}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-xs font-semibold shadow-sm transition-all"
+            >
+              <FileText className="w-4 h-4" />
+              {exportingPdf ? 'Génération…' : 'Export PDF complet'}
+            </button>
+          </>
+        ) : null}
       </PageHeader>
 
       <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-wrap items-center justify-between gap-3">

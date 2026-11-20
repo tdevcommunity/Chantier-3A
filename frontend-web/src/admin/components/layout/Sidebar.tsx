@@ -24,6 +24,8 @@ import {
   ADMIN_SIDEBAR_WIDTH_EXPANDED,
 } from '../../lib/admin-theme';
 import { AdminTdevLogo } from '../brand/AdminTdevLogo';
+import { useOrgRole } from '../../context/OrgRoleContext';
+import { canAccessAdminRoute } from '../../lib/org-permissions';
 
 const STORAGE_KEY = 'admin-sidebar-collapsed';
 
@@ -114,6 +116,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const location = useLocation();
   const pathname = location.pathname;
   const desktopWidth = collapsed ? ADMIN_RAIL_WIDTH : ADMIN_SIDEBAR_WIDTH_EXPANDED;
+  const { orgRole, loading: orgRoleLoading } = useOrgRole();
+  const visibleNavItems = NAV_ITEMS.filter((item) =>
+    orgRoleLoading
+      ? item.path !== 'event' &&
+        item.path !== 'ticket-types' &&
+        item.path !== 'orders' &&
+        item.path !== 'tickets' &&
+        item.path !== 'submissions'
+      : canAccessAdminRoute(orgRole, item.path),
+  );
 
   const onNavigate = () => {
     if (window.innerWidth < 1024) onClose();
@@ -160,7 +172,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             collapsed ? 'items-center px-2' : 'px-3',
           )}
         >
-          {NAV_ITEMS.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavItemLink
               key={item.path}
               item={item}
@@ -204,7 +216,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
         <nav className="admin-sidebar-scroll flex-1 space-y-1 overflow-y-auto overflow-x-hidden p-3">
-          {NAV_ITEMS.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavItemLink
               key={item.path}
               item={item}

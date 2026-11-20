@@ -14,6 +14,12 @@ from events import service as events_svc
 from http_layer.deps import AppState, require_user
 from http_layer.errors import json_error
 from scan import admission
+from scan.serial_web import (
+    name_query_matches,
+    normalize_pass_serial,
+    parse_registration_form,
+    preview_from_ticket_row,
+)
 from store import admissions as admissions_repo
 from store import ticket_types as ticket_types_repo
 from tickets import capability as cap
@@ -47,6 +53,30 @@ class SyncScanBody(BaseModel):
     """Bounded, idempotent batch of offline scan operations."""
     event_id: str
     operations: list[SyncScanItem] = Field(default_factory=list, max_length=500)
+
+
+class LookupSerialBody(BaseModel):
+    """Preview a ticket by public serial without recording admission."""
+    event_id: str
+    serial: str = ""
+    serial_suffix: str = ""
+
+
+class LookupNameBody(BaseModel):
+    """Find tickets by participant name (web gate scanner)."""
+    event_id: str
+    query: str = ""
+
+
+class ScanBySerialBody(BaseModel):
+    """Record admission after agent confirmation."""
+    event_id: str
+    serial: str = ""
+    serial_suffix: str = ""
+    device_id: str = "web-scanner"
+    gate_id: str = ""
+    scanned_at: str = ""
+    control_type: ControlType = "event_entry"
 
 
 class _DbSeenSet:
@@ -168,43 +198,83 @@ def _control_allowed(st, ticket_type_id: str, control_type: str) -> bool:
     }[control_type]
 
 
-@router.post("/scan")
-def scan_ticket(body: ScanBody, state: AppState = Depends(require_user)):
-    """Verify a capability and record an online control operation."""
-    if not body.event_id or not body.capability:
-        return json_error(400, "invalid_request", "event_id and capability are required")
-    if not rbac.can_manage_event(state.store, state.current_user.id, body.event_id, rbac.ROLE_SCANNER):
-        return json_error(403, "forbidden", "you are not allowed to scan for this event")
+def _ticket_admitted(st, ticket_id: str, control_type: str) -> bool:
+    rows = st.fetchall(
+        """SELECT 1 FROM admissions
+           WHERE ticket_id = ? AND control_type = ? AND result = 'admitted' LIMIT 1""",
+        (ticket_id, control_type),
+    )
+    return bool(rows)
+
+
+def _fetch_ticket_detail_row(st, event_id: str, serial: str):
+    return st.fetchone(
+        """SELECT t.id, t.serial, t.status, t.capability, t.holder_name, t.ticket_type_id,
+                  tt.name AS ticket_type_name, tt.pass_tier,
+                  o.buyer_email, o.buyer_first_name, o.buyer_last_name
+           FROM tickets t
+           JOIN ticket_types tt ON tt.id = t.ticket_type_id
+           JOIN orders o ON o.id = t.order_id
+           WHERE t.event_id = ? AND t.serial = ?""",
+        (event_id, serial),
+    )
+
+
+def _event_serial_year(st, event_id: str) -> int:
+    row = st.fetchone("SELECT starts_at FROM events WHERE id = ?", (event_id,))
+    if row is None:
+        return 2026
+    raw = row["starts_at"] if hasattr(row, "keys") else row[0]
+    if not raw:
+        return 2026
+    try:
+        text = str(raw)
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        return datetime.fromisoformat(text).year
+    except (TypeError, ValueError):
+        return 2026
+
+
+def _perform_capability_scan(
+    state: AppState,
+    *,
+    event_id: str,
+    capability: str,
+    gate_id: str,
+    device_id: str,
+    control_type: ControlType,
+    scanned_at: str,
+) -> dict:
     now = datetime.now(timezone.utc)
-    if body.scanned_at:
+    if scanned_at:
         try:
-            now = _parse_scanned_at(body.scanned_at)
+            now = _parse_scanned_at(scanned_at)
         except ValueError:
             return json_error(400, "invalid_request", "scanned_at must be RFC3339")
     try:
-        cap_eid = cap.peek_eid(body.capability)
+        cap_eid = cap.peek_eid(capability)
     except cap.CapabilityError as err:
         return {"result": admission.Status.INVALID.value, "reason": str(err), "ticket_id": ""}
-    ring = issue_mod.issuer_public_keys(state.store, cap_eid or body.event_id)
+    ring = issue_mod.issuer_public_keys(state.store, cap_eid or event_id)
     try:
-        verified = cap.verify_with_ring(body.capability, ring, now)
-        if verified.eid == body.event_id and not _control_allowed(
-            state.store, verified.tt, body.control_type
+        verified = cap.verify_with_ring(capability, ring, now)
+        if verified.eid == event_id and not _control_allowed(
+            state.store, verified.tt, control_type
         ):
             return {
                 "result": admission.Status.NOT_AUTHORIZED.value,
                 "reason": "ticket does not grant this control",
                 "ticket_id": verified.tid,
-                "control_type": body.control_type,
+                "control_type": control_type,
             }
     except cap.CapabilityError:
-        # The admission engine below returns its normalized invalid reason.
         pass
     seen = _DbSeenSet(
-        state.store, body.event_id, body.gate_id, body.device_id,
-        state.current_user.id, body.control_type,
+        state.store, event_id, gate_id, device_id,
+        state.current_user.id, control_type,
     )
-    result = admission.decide(body.capability, ring, body.event_id, seen, now, store=state.store)
+    result = admission.decide(capability, ring, event_id, seen, now, store=state.store)
     ticket_id = result.payload.tid if result.payload else ""
     out = {
         "result": result.status.value,
@@ -213,14 +283,138 @@ def scan_ticket(body: ScanBody, state: AppState = Depends(require_user)):
         "serial": "",
         "holder_name": "",
         "participant": None,
-        "control_type": body.control_type,
+        "control_type": control_type,
         "first_scan": None,
     }
     if ticket_id:
         out.update(_ticket_details(state.store, ticket_id))
     if result.status == admission.Status.DUPLICATE and ticket_id:
-        out["first_scan"] = admissions_repo.first_admission(state.store, ticket_id, body.control_type)
+        out["first_scan"] = admissions_repo.first_admission(state.store, ticket_id, control_type)
     return out
+
+
+@router.post("/scan")
+def scan_ticket(body: ScanBody, state: AppState = Depends(require_user)):
+    """Verify a capability and record an online control operation."""
+    if not body.event_id or not body.capability:
+        return json_error(400, "invalid_request", "event_id and capability are required")
+    if not rbac.can_manage_event(state.store, state.current_user.id, body.event_id, rbac.ROLE_SCANNER):
+        return json_error(403, "forbidden", "you are not allowed to scan for this event")
+    return _perform_capability_scan(
+        state,
+        event_id=body.event_id,
+        capability=body.capability,
+        gate_id=body.gate_id,
+        device_id=body.device_id,
+        control_type=body.control_type,
+        scanned_at=body.scanned_at,
+    )
+
+
+@router.post("/scan/lookup-serial")
+def lookup_scan_serial(body: LookupSerialBody, state: AppState = Depends(require_user)):
+    """Preview ticket holder data from pass serial without recording admission."""
+    if not body.event_id:
+        return json_error(400, "invalid_request", "event_id is required")
+    if not rbac.can_manage_event(state.store, state.current_user.id, body.event_id, rbac.ROLE_SCANNER):
+        return json_error(403, "forbidden", "you are not allowed to scan for this event")
+    year = _event_serial_year(state.store, body.event_id)
+    serial = normalize_pass_serial(serial=body.serial, serial_suffix=body.serial_suffix, year=year)
+    if not serial:
+        return {"found": False, "reason": "invalid_serial_format"}
+    row = _fetch_ticket_detail_row(state.store, body.event_id, serial)
+    if row is None:
+        return {"found": False, "reason": "not_found"}
+    status = row["status"] if hasattr(row, "keys") else row[2]
+    if status != "valid":
+        return {"found": False, "reason": "ticket_not_valid", "serial": serial}
+    ticket_id = row["id"]
+    admitted = _ticket_admitted(state.store, ticket_id, "event_entry")
+    data = {
+        "id": row["id"],
+        "serial": row["serial"],
+        "status": row["status"],
+        "holder_name": row["holder_name"],
+        "ticket_type_name": row["ticket_type_name"],
+        "pass_tier": row["pass_tier"],
+        "buyer_email": row["buyer_email"],
+        "buyer_first_name": row["buyer_first_name"],
+        "buyer_last_name": row["buyer_last_name"],
+    }
+    preview = preview_from_ticket_row(data, admitted=admitted)
+    return {"found": True, "preview": preview}
+
+
+@router.post("/scan/lookup-name")
+def lookup_scan_name(body: LookupNameBody, state: AppState = Depends(require_user)):
+    """Search valid tickets by participant name (max 10)."""
+    if not body.event_id:
+        return json_error(400, "invalid_request", "event_id is required")
+    query = (body.query or "").strip()
+    if len(query) < 3:
+        return json_error(400, "invalid_request", "query must be at least 3 characters")
+    if not rbac.can_manage_event(state.store, state.current_user.id, body.event_id, rbac.ROLE_SCANNER):
+        return json_error(403, "forbidden", "you are not allowed to scan for this event")
+    rows = state.store.fetchall(
+        """SELECT t.id, t.serial, t.status, t.holder_name,
+                  tt.name AS ticket_type_name, tt.pass_tier,
+                  o.buyer_email, o.buyer_first_name, o.buyer_last_name
+           FROM tickets t
+           JOIN ticket_types tt ON tt.id = t.ticket_type_id
+           JOIN orders o ON o.id = t.order_id
+           WHERE t.event_id = ? AND t.status = 'valid'
+           ORDER BY t.issued_at ASC, t.id ASC""",
+        (body.event_id,),
+    )
+    matches: list[dict] = []
+    for row in rows:
+        data = {
+            "id": row["id"],
+            "serial": row["serial"],
+            "status": row["status"],
+            "holder_name": row["holder_name"],
+            "ticket_type_name": row["ticket_type_name"],
+            "pass_tier": row["pass_tier"],
+            "buyer_email": row["buyer_email"],
+            "buyer_first_name": row["buyer_first_name"],
+            "buyer_last_name": row["buyer_last_name"],
+        }
+        if not name_query_matches(data, query):
+            continue
+        admitted = _ticket_admitted(state.store, data["id"], "event_entry")
+        matches.append(preview_from_ticket_row(data, admitted=admitted))
+        if len(matches) >= 10:
+            break
+    return {"matches": matches, "truncated": len(matches) >= 10}
+
+
+@router.post("/scan/by-serial")
+def scan_by_serial(body: ScanBySerialBody, state: AppState = Depends(require_user)):
+    """Record admission using public pass serial (web gate workflow)."""
+    if not body.event_id:
+        return json_error(400, "invalid_request", "event_id is required")
+    if not rbac.can_manage_event(state.store, state.current_user.id, body.event_id, rbac.ROLE_SCANNER):
+        return json_error(403, "forbidden", "you are not allowed to scan for this event")
+    year = _event_serial_year(state.store, body.event_id)
+    serial = normalize_pass_serial(serial=body.serial, serial_suffix=body.serial_suffix, year=year)
+    if not serial:
+        return {"result": admission.Status.INVALID.value, "reason": "invalid serial", "ticket_id": ""}
+    row = _fetch_ticket_detail_row(state.store, body.event_id, serial)
+    if row is None:
+        return {"result": admission.Status.INVALID.value, "reason": "pass not found", "ticket_id": ""}
+    status = row["status"]
+    capability = row["capability"]
+    if status != "valid" or not capability:
+        return {"result": admission.Status.INVALID.value, "reason": "ticket not valid", "ticket_id": ""}
+    return _perform_capability_scan(
+        state,
+        event_id=body.event_id,
+        capability=capability,
+        gate_id=body.gate_id or "web-gate",
+        device_id=body.device_id or "web-scanner",
+        control_type=body.control_type,
+        scanned_at=body.scanned_at,
+    )
 
 
 @router.post("/scan/sync")
@@ -334,10 +528,15 @@ def list_attendees(event_id: str, state: AppState = Depends(require_user)):
     """List attendees."""
     if not rbac.can_manage_event(state.store, state.current_user.id, event_id, rbac.ROLE_SCANNER):
         return json_error(403, "forbidden", "forbidden")
+    include_registration = rbac.can_manage_event(
+        state.store, state.current_user.id, event_id, rbac.ROLE_ADMIN
+    )
     rows = state.store.fetchall(
         """SELECT t.id, t.order_id, t.serial, t.holder_name, t.status, t.ticket_type_id,
                   tt.name AS ticket_type_name, tt.pass_tier,
                   o.buyer_email, o.buyer_first_name, o.buyer_last_name, o.school_name,
+                  o.buyer_name, o.status AS order_status, o.total_minor, o.currency,
+                  o.paid_at, o.created_at AS order_created_at, o.registration_form,
                   (SELECT a.scanned_at FROM admissions a
                    WHERE a.ticket_id = t.id AND a.result = 'admitted'
                    ORDER BY a.scanned_at ASC, a.id ASC LIMIT 1) AS admitted_at,
@@ -366,7 +565,7 @@ def list_attendees(event_id: str, state: AppState = Depends(require_user)):
         admitted_raw = row["admitted"] if hasattr(row, "keys") else row[-1]
         admitted = bool(admitted_raw) if admitted_raw not in (0, "0", False, None) else False
         admitted_at = row["admitted_at"] if hasattr(row, "keys") else None
-        attendees.append({
+        entry = {
             "ticket_id": row["id"], "order_id": row["order_id"], "serial": row["serial"],
             "holder_name": row["holder_name"], "status": row["status"],
             "ticket_type_id": row["ticket_type_id"], "ticket_type_name": row["ticket_type_name"],
@@ -379,5 +578,15 @@ def list_attendees(event_id: str, state: AppState = Depends(require_user)):
             "gate_id": row["gate_id"] if hasattr(row, "keys") else None,
             "device_id": row["device_id"] if hasattr(row, "keys") else None,
             "scanned_at": admitted_at,
-        })
+        }
+        if include_registration:
+            raw_form = row["registration_form"] if hasattr(row, "keys") else None
+            entry["registration_form"] = parse_registration_form(raw_form)
+            entry["order_status"] = row["order_status"] or ""
+            entry["buyer_name"] = row["buyer_name"] or ""
+            entry["total_minor"] = row["total_minor"] or 0
+            entry["currency"] = row["currency"] or ""
+            entry["paid_at"] = row["paid_at"] or ""
+            entry["order_created_at"] = row["order_created_at"] or ""
+        attendees.append(entry)
     return {"attendees": attendees}

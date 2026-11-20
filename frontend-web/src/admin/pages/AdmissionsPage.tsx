@@ -16,12 +16,16 @@ import { admissionsService } from '../services/admissions.service';
 import { exportsService } from '../services/exports.service';
 import { useToast } from '../context/ToastContext';
 import { useEvent } from '../context/EventContext';
+import { useOrgRole } from '../context/OrgRoleContext';
+import { canExportAny } from '../lib/org-permissions';
 import { adminUserMessage } from '../lib/admin-user-message';
 import { formatDateTime } from '../lib/utils';
 import { Admission, AdmissionResult } from '../types';
 
 export const AdmissionsPage: React.FC = () => {
   const { eventId } = useEvent();
+  const { orgRole } = useOrgRole();
+  const showExports = canExportAny(orgRole);
   const { success } = useToast();
   const [admissions, setAdmissions] = useState<Admission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,13 +84,15 @@ export const AdmissionsPage: React.FC = () => {
         title="Contrôle des Admissions & Scans d’Entrée"
         subtitle="Historique temps réel des scans QR code aux portiques et terminaux mobiles"
       >
-        <button
-          onClick={handleExport}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-sm transition-all"
-        >
-          <Download className="w-4 h-4 text-slate-500" />
-          Exporter Journal CSV
-        </button>
+        {showExports ? (
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-sm transition-all"
+          >
+            <Download className="w-4 h-4 text-slate-500" />
+            Exporter Journal CSV
+          </button>
+        ) : null}
       </PageHeader>
 
       {/* 4 Stats Cards (Section 16 requirement) */}

@@ -43,12 +43,6 @@ function pickTicketForTier(types: TicketType[], tier: 'student' | 'vip'): Ticket
   );
 }
 
-function pickWelcomePackType(types: TicketType[]): TicketType | undefined {
-  return types.find(
-    (t) => t.product_kind === 'goodie' || /welcome|pack|goodies/i.test(t.name),
-  );
-}
-
 function statsFromType(tt: TicketType | undefined): Pick<LandingPassStatRow, 'sold' | 'total' | 'ticketTypeId'> {
   if (!tt) return { sold: 0, total: 0 };
   return {
@@ -65,7 +59,6 @@ function rowFromListing(
   let tt: TicketType | undefined;
   if (listing.checkoutTier === 'student') tt = pickTicketForTier(ticketTypes, 'student');
   else if (listing.checkoutTier === 'vip') tt = pickTicketForTier(ticketTypes, 'vip');
-  else if (listing.listingId === 'welcome-pack') tt = pickWelcomePackType(ticketTypes);
 
   return {
     listingId: listing.listingId,
@@ -78,7 +71,9 @@ function rowFromListing(
   };
 }
 
-/** Aligne les stats admin sur les 3 offres affichées sur la landing (catalogue statique). */
+/** Passes gérés dans la billetterie (hors merch / liens externes vitrine). */
 export function buildLandingPassStats(ticketTypes: TicketType[]): LandingPassStatRow[] {
-  return getStaticBilletterieListing().map((listing) => rowFromListing(listing, ticketTypes));
+  return getStaticBilletterieListing()
+    .filter((listing) => listing.checkoutTier)
+    .map((listing) => rowFromListing(listing, ticketTypes));
 }

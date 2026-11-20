@@ -11,7 +11,6 @@ import {
 import { StatCard } from '../components/ui/StatCard';
 import { SalesAreaChart } from '../components/dashboard/SalesAreaChart';
 import { TicketDonutChart } from '../components/dashboard/TicketDonutChart';
-import { AdmissionsBarChart } from '../components/dashboard/AdmissionsBarChart';
 import { PassesProgressCard } from '../components/dashboard/PassesProgressCard';
 import { RecentOrdersTable } from '../components/dashboard/RecentOrdersTable';
 import { dashboardService } from '../services/dashboard.service';
@@ -57,7 +56,6 @@ export const DashboardPage: React.FC = () => {
   const [kpis, setKpis] = useState<DashboardKPIData | null>(null);
   const [salesData, setSalesData] = useState<any[]>([]);
   const [distribution, setDistribution] = useState<any[]>([]);
-  const [admissions, setAdmissions] = useState<any[]>([]);
   const [ticketTypes, setTicketTypes] = useState<TicketType[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,17 +69,15 @@ export const DashboardPage: React.FC = () => {
         const results = await Promise.allSettled([
           dashboardService.getSalesChart(eventId),
           dashboardService.getTicketDistribution(eventId),
-          dashboardService.getAdmissionStats(eventId),
           ticketTypesService.getAll(eventId),
           ordersService.getAll({ limit: 10 }, eventId),
         ]);
         if (results[0].status === 'fulfilled') setSalesData(results[0].value);
         if (results[1].status === 'fulfilled') setDistribution(results[1].value);
-        if (results[2].status === 'fulfilled') setAdmissions(results[2].value);
-        if (results[3].status === 'fulfilled') {
-          setTicketTypes(results[3].value.filter((tt) => tt.product_kind !== 'goodie'));
+        if (results[2].status === 'fulfilled') {
+          setTicketTypes(results[2].value.filter((tt) => tt.product_kind !== 'goodie'));
         }
-        if (results[4].status === 'fulfilled') setOrders(results[4].value.data);
+        if (results[3].status === 'fulfilled') setOrders(results[3].value.data);
       } catch (err) {
         console.error('Error loading dashboard', err);
         error('Données indisponibles', 'Impossible de charger les statistiques.');
@@ -175,14 +171,7 @@ export const DashboardPage: React.FC = () => {
 
       <PassesProgressCard ticketTypes={ticketTypes} />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <RecentOrdersTable orders={orders} />
-        </div>
-        <div>
-          <AdmissionsBarChart data={admissions} />
-        </div>
-      </div>
+      <RecentOrdersTable orders={orders} />
     </div>
   );
 };

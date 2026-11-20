@@ -55,7 +55,7 @@ export const PassesProgressCard: React.FC<PassesProgressCardProps> = ({ ticketTy
         <div>
           <h3 className={adminTheme.cardTitle}>Offres du festival</h3>
           <p className={adminTheme.cardSubtitle}>
-            Pass Festival, Nexus Night et Welcome Pack
+            Pass Festival et Nexus Night
           </p>
         </div>
         <Link
@@ -66,7 +66,7 @@ export const PassesProgressCard: React.FC<PassesProgressCardProps> = ({ ticketTy
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {items.map((row) => {
           const accent = row.cardAccent ?? 'neutral';
           const external = Boolean(row.externalUrl);

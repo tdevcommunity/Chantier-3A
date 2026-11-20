@@ -6,7 +6,6 @@ import {
   ScanLine,
   Download,
   Clock,
-  ShoppingBag,
 } from 'lucide-react';
 import { StatCard } from '../components/ui/StatCard';
 import { SalesAreaChart } from '../components/dashboard/SalesAreaChart';
@@ -22,31 +21,7 @@ import { useEvent } from '../context/EventContext';
 import { useToast } from '../context/ToastContext';
 import { formatMoney } from '../lib/utils';
 import { adminTheme } from '../lib/admin-theme';
-import { cn } from '../lib/utils';
 import { DashboardKPIData, TicketType, Order } from '../types';
-
-function MiniInsightCard({
-  title,
-  value,
-  hint,
-  icon,
-}: {
-  title: string;
-  value: string | number;
-  hint: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className={cn(adminTheme.card, 'flex items-start gap-3 p-4')}>
-      <div className="rounded-xl bg-zinc-100 p-2 text-zinc-600">{icon}</div>
-      <div>
-        <p className="text-xs font-medium text-zinc-500">{title}</p>
-        <p className="text-xl font-semibold tabular-nums text-zinc-900">{value}</p>
-        <p className="mt-0.5 text-[11px] text-zinc-500">{hint}</p>
-      </div>
-    </div>
-  );
-}
 
 export const DashboardPage: React.FC = () => {
   const { user } = useAuth();
@@ -158,15 +133,7 @@ export const DashboardPage: React.FC = () => {
         <div className="lg:col-span-2">
           <SalesAreaChart data={salesData} />
         </div>
-        <div className="flex flex-col gap-4">
-          <TicketDonutChart data={distribution} total={kpis?.tickets_sold || 0} />
-          <MiniInsightCard
-            title="Commandes récentes"
-            value={loading ? '…' : orders.length}
-            hint="Derniers flux affichés ci-dessous"
-            icon={<ShoppingBag className="h-4 w-4" />}
-          />
-        </div>
+        <TicketDonutChart data={distribution} total={kpis?.tickets_sold || 0} />
       </div>
 
       <PassesProgressCard ticketTypes={ticketTypes} />

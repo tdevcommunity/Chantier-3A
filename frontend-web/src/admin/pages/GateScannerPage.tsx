@@ -156,13 +156,17 @@ export const GateScannerPage: React.FC = () => {
 
   return (
     <div className="admin-app min-h-screen bg-[#0f1412] text-white flex flex-col">
-      <header className="border-b border-white/10 px-4 py-4 flex items-center justify-between gap-3">
-        <AdminTdevLogo variant="onDark" size="sm" />
-        <p className="text-sm font-semibold text-emerald-300/90">Scanner web</p>
+      <header className="border-b border-white/10 px-4 py-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+        <div className="justify-self-start min-w-0">
+          <AdminTdevLogo variant="onDark" size="sm" />
+        </div>
+        <p className="text-sm font-semibold text-emerald-300/90 text-center whitespace-nowrap">
+          Scanner web
+        </p>
         <button
           type="button"
           onClick={() => logout()}
-          className="text-xs text-white/60 hover:text-white"
+          className="justify-self-end text-xs text-white/60 hover:text-white whitespace-nowrap"
         >
           Déconnexion
         </button>
@@ -224,20 +228,28 @@ export const GateScannerPage: React.FC = () => {
         {step === 'input' && mode === 'serial' ? (
           <Card
             title="Numéro de pass"
-            hint={`Saisissez les 4 chiffres affichés sur le pass : ${PASS_PREFIX}XXXX`}
+            hint="Saisissez uniquement les 4 chiffres à la fin du pass (après le préfixe)."
           >
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-mono text-emerald-400 shrink-0">{PASS_PREFIX}</span>
-              <input
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={4}
-                value={serialSuffix}
-                onChange={(e) => setSerialSuffix(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                className="flex-1 rounded-xl border border-white/20 bg-black/30 px-4 py-3 text-2xl font-mono tracking-widest text-center"
-                placeholder="0000"
-              />
-            </div>
+            <label className="block">
+              <span className="sr-only">Suffixe du numéro de pass</span>
+              <div className="flex w-full items-stretch overflow-hidden rounded-xl border border-white/20 bg-black/30 focus-within:border-emerald-500/50 focus-within:ring-2 focus-within:ring-emerald-500/25">
+                <span className="flex shrink-0 items-center border-r border-white/15 bg-white/5 px-2.5 py-3 text-[11px] font-mono font-semibold text-emerald-400 sm:px-3 sm:text-xs whitespace-nowrap">
+                  {PASS_PREFIX}
+                </span>
+                <input
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  value={serialSuffix}
+                  onChange={(e) =>
+                    setSerialSuffix(e.target.value.replace(/\D/g, '').slice(0, 4))
+                  }
+                  className="min-w-[4.5rem] flex-1 border-0 bg-transparent px-2 py-3 text-center text-2xl font-mono tracking-[0.35em] text-white placeholder:text-white/25 focus:outline-none"
+                  placeholder="0000"
+                  autoComplete="off"
+                />
+              </div>
+            </label>
             <PrimaryButton disabled={busy || !eventId} onClick={() => void runLookupSerial()}>
               {busy ? 'Vérification…' : 'Vérifier le billet'}
             </PrimaryButton>

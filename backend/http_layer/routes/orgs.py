@@ -322,6 +322,17 @@ def create_or_update_staff(
 
     try:
         existing = user_store.get_user_by_email(state.store, norm)
+        try:
+            existing_role = orgs_repo.get_org_member_role(state.store, org_id, existing.id)
+            my_role = orgs_repo.get_org_member_role(state.store, org_id, state.current_user.id)
+            if rbac._RANK.get(existing_role, 0) >= rbac._RANK.get(my_role, 0):
+                return json_error(
+                    403,
+                    "forbidden",
+                    "Impossible de modifier les identifiants d'un membre de rôle égal ou supérieur.",
+                )
+        except NotFoundError:
+            pass
         user_store.update_password_hash(state.store, existing.id, ph)
         user_id = existing.id
         user_name = existing.name or name
@@ -378,8 +389,12 @@ def reset_staff_password(
     except NotFoundError:
         return json_error(404, "not_found", "Membre introuvable dans cette organisation.")
 
-    if rbac._RANK.get(target_role, 0) > rbac._RANK.get(my_role, 0):
-        return json_error(403, "forbidden", "Impossible de modifier le mot de passe d'un rôle supérieur.")
+    if rbac._RANK.get(target_role, 0) >= rbac._RANK.get(my_role, 0):
+        return json_error(
+            403,
+            "forbidden",
+            "Impossible de réinitialiser le mot de passe d'un membre de rôle égal ou supérieur.",
+        )
 
     from auth.password import hash_password
     from store import users as user_store

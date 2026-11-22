@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Body, Depends, Response
 
 from auth import rbac
 from events import service as events_svc
@@ -166,6 +166,30 @@ def admission_conflicts(event_id: str, state: AppState = Depends(require_user)):
     if not rbac.can_manage_event(state.store, state.current_user.id, event_id, rbac.ROLE_SCANNER):
         return json_error(403, "forbidden", "you are not a member of this event's org")
     return {"conflicts": admissions_repo.list_conflicts(state.store, event_id)}
+
+
+@router.post("/{event_id}/admissions/reset")
+def reset_admissions(
+    event_id: str,
+    body: dict | None = Body(default=None),
+    state: AppState = Depends(require_user),
+):
+    """Reset admissions and check-in consumptions for an event (all, before_iso, or ticket_id)."""
+    if not rbac.can_manage_event(state.store, state.current_user.id, event_id, rbac.ROLE_ADMIN):
+        return json_error(403, "forbidden", "you are not an admin/owner of this event's org")
+    payload = body or {}
+    before_iso = (payload.get("before_iso") or "").strip() or None
+    ticket_id = (payload.get("ticket_id") or "").strip() or None
+    try:
+        summary = admissions_repo.reset_event_admissions(
+            state.store,
+            event_id,
+            before_iso=before_iso,
+            ticket_id=ticket_id,
+        )
+    except Exception as err:
+        return json_error(500, "internal_error", f"reset failed: {err}")
+    return {"status": "ok", **summary}
 
 
 @ticket_router.patch("/ticket-types/{tt_id}")

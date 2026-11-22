@@ -157,4 +157,23 @@ export const admissionsService = {
       body: JSON.stringify({ note }),
     });
   },
+
+  async resetAll(
+    eventId?: string | null,
+    options?: { beforeIso?: string; ticketId?: string },
+  ): Promise<{
+    status: string;
+    deleted_admissions: number;
+    deleted_consumptions: number;
+    deleted_scan_logs: number;
+  }> {
+    const id = requireEventId(eventId ?? null);
+    const body: Record<string, string> = {};
+    if (options?.beforeIso) body.before_iso = options.beforeIso;
+    if (options?.ticketId) body.ticket_id = options.ticketId;
+    return apiFetch(`/events/${id}/admissions/reset`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
 };

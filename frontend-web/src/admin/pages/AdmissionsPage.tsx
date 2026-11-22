@@ -9,6 +9,7 @@ import {
   HelpCircle,
   ExternalLink,
   Clock,
+  RotateCcw,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatCard } from '../components/ui/StatCard';
@@ -25,21 +26,39 @@ import { formatDateTime } from '../lib/utils';
 import { buildScannerUrl, serialSuffixFromDisplay } from '../lib/scanner-url';
 import { Admission, AdmissionResult } from '../types';
 
+const RESET_CONFIRM_TOKEN = 'REINITIALISER';
+type ResetScope = 'all' | 'before_date' | 'ticket';
+
+function todayDateInput(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export const AdmissionsPage: React.FC = () => {
   const { eventId } = useEvent();
   const { orgRole } = useOrgRole();
   const showExports = canExportAny(orgRole);
-  const { success } = useToast();
+  const canResetAdmissions = orgRole === 'owner' || orgRole === 'admin';
+  const { success, error: showError } = useToast();
   const [admissions, setAdmissions] = useState<Admission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetScope, setResetScope] = useState<ResetScope>('all');
+  const [resetBeforeDate, setResetBeforeDate] = useState<string>(todayDateInput);
+  const [resetTicketId, setResetTicketId] = useState<string>('');
+  const [resetConfirmInput, setResetConfirmInput] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [resultFilter, setResultFilter] = useState<AdmissionResult | 'all'>('all');
 
-  const loadData = async () => {
+  const loadData = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
       const data = await admissionsService.getAll(
         {
@@ -50,9 +69,11 @@ export const AdmissionsPage: React.FC = () => {
       );
       setAdmissions(data);
     } catch (err: unknown) {
-      setError(adminUserMessage(err, 'Impossible de récupérer les admissions.'));
+      if (!silent) {
+        setError(adminUserMessage(err, 'Impossible de récupérer les admissions.'));
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -62,11 +83,11 @@ export const AdmissionsPage: React.FC = () => {
 
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') loadData();
+      if (document.visibilityState === 'visible') loadData(true);
     };
     document.addEventListener('visibilitychange', onVisibility);
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') loadData();
+      if (document.visibilityState === 'visible') loadData(true);
     }, 10000);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
@@ -79,6 +100,55 @@ export const AdmissionsPage: React.FC = () => {
     success('Export CSV réussi', 'Le journal des scans d’admission a été téléchargé.');
   };
 
+  const admittedList = admissions.filter((a) => a.result === 'admitted');
+
+  const openResetModal = () => {
+    setResetScope('all');
+    setResetBeforeDate(todayDateInput());
+    setResetTicketId(admittedList[0]?.ticket_id ?? '');
+    setResetConfirmInput('');
+    setShowResetModal(true);
+  };
+
+  const canSubmitReset =
+    !resetting &&
+    resetConfirmInput.trim() === RESET_CONFIRM_TOKEN &&
+    (resetScope === 'all' ||
+      (resetScope === 'before_date' && Boolean(resetBeforeDate)) ||
+      (resetScope === 'ticket' && Boolean(resetTicketId)));
+
+  const handleResetAdmissions = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmitReset) return;
+
+    const options =
+      resetScope === 'before_date'
+        ? { beforeIso: new Date(`${resetBeforeDate}T00:00:00`).toISOString() }
+        : resetScope === 'ticket'
+          ? { ticketId: resetTicketId }
+          : undefined;
+
+    setResetting(true);
+    try {
+      const res = await admissionsService.resetAll(eventId, options);
+      const total = Math.max(res.deleted_admissions, res.deleted_consumptions);
+      setShowResetModal(false);
+      setResetConfirmInput('');
+      success(
+        'Admissions réinitialisées',
+        `${total} passage(s) réinitialisé(s). Les passes ciblés sont de nouveau valides pour le scan.`,
+      );
+      await loadData();
+    } catch (err) {
+      showError(
+        'Réinitialisation impossible',
+        adminUserMessage(err, 'Impossible de réinitialiser les admissions.'),
+      );
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const count = (result: AdmissionResult) => admissions.filter((admission) => admission.result === result).length;
   const scannerUrl = buildScannerUrl();
 
@@ -88,25 +158,37 @@ export const AdmissionsPage: React.FC = () => {
         title="Journal des scans d’entrée"
         subtitle="Historique des admissions enregistrées au portique (lecture seule — pas d’admission depuis cette page)"
       >
-        <a
-          href={scannerUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold shadow-sm transition-all"
-        >
-          <QrCode className="w-4 h-4" />
-          Ouvrir le scanner portique
-          <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-        </a>
-        {showExports ? (
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-sm transition-all"
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href={scannerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold shadow-sm transition-all"
           >
-            <Download className="w-4 h-4 text-slate-500" />
-            Exporter Journal CSV
-          </button>
-        ) : null}
+            <QrCode className="w-4 h-4" />
+            Ouvrir le scanner portique
+            <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+          </a>
+          {canResetAdmissions ? (
+            <button
+              type="button"
+              onClick={openResetModal}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-semibold shadow-sm transition-all"
+            >
+              <RotateCcw className="w-4 h-4 text-slate-500" />
+              Réinitialiser les admissions
+            </button>
+          ) : null}
+          {showExports ? (
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-sm transition-all"
+            >
+              <Download className="w-4 h-4 text-slate-500" />
+              Exporter Journal CSV
+            </button>
+          ) : null}
+        </div>
       </PageHeader>
 
       <div className="rounded-2xl border border-amber-200/80 bg-amber-50/90 px-4 py-3 text-xs text-amber-950">
@@ -266,6 +348,132 @@ export const AdmissionsPage: React.FC = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-md w-full space-y-4 shadow-xl">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                Réinitialiser les admissions
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                Choisissez le périmètre à réinitialiser. Les passes concernés perdront leur statut « Admis » et pourront être scannés à nouveau.
+              </p>
+            </div>
+
+            <form onSubmit={handleResetAdmissions} className="space-y-3.5">
+              <div className="space-y-2">
+                <label className="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
+                  <input
+                    type="radio"
+                    name="resetScope"
+                    checked={resetScope === 'all'}
+                    onChange={() => setResetScope('all')}
+                    className="mt-0.5 accent-slate-900"
+                  />
+                  <div>
+                    <div className="text-xs font-semibold text-slate-800">Tout l’événement</div>
+                    <div className="text-[11px] text-slate-500">Réinitialise tous les passes scannés jusqu’ici.</div>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
+                  <input
+                    type="radio"
+                    name="resetScope"
+                    checked={resetScope === 'before_date'}
+                    onChange={() => setResetScope('before_date')}
+                    className="mt-0.5 accent-slate-900"
+                  />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="text-xs font-semibold text-slate-800">Scannés avant une date</div>
+                    <div className="text-[11px] text-slate-500">Ex. choisir aujourd’hui pour ne réinitialiser que ceux d’hier et avant.</div>
+                    {resetScope === 'before_date' && (
+                      <input
+                        type="date"
+                        value={resetBeforeDate}
+                        onChange={(e) => setResetBeforeDate(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-slate-900 focus:outline-none"
+                        required
+                      />
+                    )}
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
+                  <input
+                    type="radio"
+                    name="resetScope"
+                    checked={resetScope === 'ticket'}
+                    onChange={() => setResetScope('ticket')}
+                    className="mt-0.5 accent-slate-900"
+                  />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="text-xs font-semibold text-slate-800">Un seul participant / billet</div>
+                    {resetScope === 'ticket' && (
+                      admittedList.length > 0 ? (
+                        <select
+                          value={resetTicketId}
+                          onChange={(e) => setResetTicketId(e.target.value)}
+                          className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-slate-900 focus:outline-none"
+                          required
+                        >
+                          {admittedList.map((a) => (
+                            <option key={a.ticket_id} value={a.ticket_id}>
+                              {a.holder_name || 'Sans nom'} — {a.serial || a.ticket_id}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="text-[11px] text-slate-500">Aucun billet admis actuellement.</div>
+                      )
+                    )}
+                  </div>
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                  Pour confirmer, saisissez ou collez{' '}
+                  <code className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono font-bold text-slate-800 select-all">
+                    {RESET_CONFIRM_TOKEN}
+                  </code>{' '}
+                  ci-dessous :
+                </label>
+                <input
+                  type="text"
+                  value={resetConfirmInput}
+                  onChange={(e) => setResetConfirmInput(e.target.value)}
+                  placeholder={RESET_CONFIRM_TOKEN}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-mono focus:ring-2 focus:ring-slate-900 focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowResetModal(false);
+                    setResetConfirmInput('');
+                  }}
+                  disabled={resetting}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={!canSubmitReset}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-40 transition-all"
+                >
+                  {resetting ? 'Réinitialisation…' : 'Confirmer la réinitialisation'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

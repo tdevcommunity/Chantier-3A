@@ -175,3 +175,198 @@ def admitted_counts_by_control(st: Store, event_id: str) -> dict[str, int]:
         if control in counts:
             counts[str(control)] = int(value)
     return counts
+
+
+def _table_exists(st: Store, table_name: str) -> bool:
+    """Return whether a public PostgreSQL table exists without aborting the transaction."""
+    row = st.fetchone("SELECT to_regclass(?) AS tbl", (f"public.{table_name}",))
+    val = row["tbl"] if hasattr(row, "keys") else (row[0] if row else None)
+    return val is not None
+
+
+def reset_event_admissions(
+    st: Store,
+    event_id: str,
+    *,
+    before_iso: str | None = None,
+    ticket_id: str | None = None,
+) -> dict[str, int]:
+    """Clear recorded admissions and check-in consumptions for an event.
+
+    Supports full reset (default), partial reset before a timestamp
+    (``before_iso``), or single-ticket reset (``ticket_id``). Recomputes
+    ``checkin_entitlements.uses`` from remaining consumptions when v2 checkin
+    tables are present.
+    """
+    deleted_admissions = 0
+    deleted_consumptions = 0
+    deleted_scan_logs = 0
+
+    clean_ticket = (ticket_id or "").strip() or None
+    clean_before = (before_iso or "").strip() or None
+
+    with st.transaction():
+        if clean_ticket is not None:
+            deleted_admissions = st.execute_rowcount(
+                "DELETE FROM admissions WHERE event_id = ? AND ticket_id = ?",
+                (event_id, clean_ticket),
+            )
+        elif clean_before is not None:
+            deleted_admissions = st.execute_rowcount(
+                "DELETE FROM admissions WHERE event_id = ? AND scanned_at < ?",
+                (event_id, clean_before),
+            )
+        else:
+            deleted_admissions = st.execute_rowcount(
+                "DELETE FROM admissions WHERE event_id = ?",
+                (event_id,),
+            )
+
+        has_scan_logs = _table_exists(st, "scan_logs")
+
+        if _table_exists(st, "station_consumptions"):
+            if clean_ticket is not None:
+                deleted_consumptions = st.execute_rowcount(
+                    "DELETE FROM station_consumptions WHERE event_id = ? AND ticket_id = ?",
+                    (event_id, clean_ticket),
+                )
+            elif clean_before is not None and has_scan_logs:
+                deleted_consumptions = st.execute_rowcount(
+                    """
+                    DELETE FROM station_consumptions
+                    WHERE event_id = ?
+                      AND (
+                        consumed_at < ?::timestamptz
+                        OR winning_log_id IN (
+                          SELECT log_id FROM scan_logs
+                          WHERE event_id = ? AND server_received_at < ?::timestamptz
+                        )
+                      )
+                    """,
+                    (event_id, clean_before, event_id, clean_before),
+                )
+            elif clean_before is not None:
+                deleted_consumptions = st.execute_rowcount(
+                    "DELETE FROM station_consumptions WHERE event_id = ? AND consumed_at < ?::timestamptz",
+                    (event_id, clean_before),
+                )
+            else:
+                deleted_consumptions = st.execute_rowcount(
+                    "DELETE FROM station_consumptions WHERE event_id = ?",
+                    (event_id,),
+                )
+
+        if _table_exists(st, "scan_conflicts"):
+            if clean_ticket is not None:
+                st.execute(
+                    "DELETE FROM scan_conflicts WHERE event_id = ? AND ticket_id = ?",
+                    (event_id, clean_ticket),
+                )
+            elif clean_before is not None and has_scan_logs:
+                st.execute(
+                    """
+                    DELETE FROM scan_conflicts
+                    WHERE event_id = ?
+                      AND (
+                        detected_at < ?::timestamptz
+                        OR winning_log_id IN (
+                          SELECT log_id FROM scan_logs
+                          WHERE event_id = ? AND server_received_at < ?::timestamptz
+                        )
+                        OR losing_log_id IN (
+                          SELECT log_id FROM scan_logs
+                          WHERE event_id = ? AND server_received_at < ?::timestamptz
+                        )
+                      )
+                    """,
+                    (event_id, clean_before, event_id, clean_before, event_id, clean_before),
+                )
+            elif clean_before is not None:
+                st.execute(
+                    "DELETE FROM scan_conflicts WHERE event_id = ? AND detected_at < ?::timestamptz",
+                    (event_id, clean_before),
+                )
+            else:
+                st.execute(
+                    "DELETE FROM scan_conflicts WHERE event_id = ?",
+                    (event_id,),
+                )
+
+        if has_scan_logs:
+            st.execute("ALTER TABLE scan_logs DISABLE TRIGGER trg_scan_logs_immutable")
+            try:
+                if clean_ticket is not None:
+                    deleted_scan_logs = st.execute_rowcount(
+                        "DELETE FROM scan_logs WHERE event_id = ? AND ticket_id = ?",
+                        (event_id, clean_ticket),
+                    )
+                elif clean_before is not None:
+                    deleted_scan_logs = st.execute_rowcount(
+                        "DELETE FROM scan_logs WHERE event_id = ? AND server_received_at < ?::timestamptz",
+                        (event_id, clean_before),
+                    )
+                else:
+                    deleted_scan_logs = st.execute_rowcount(
+                        "DELETE FROM scan_logs WHERE event_id = ?",
+                        (event_id,),
+                    )
+            finally:
+                st.execute("ALTER TABLE scan_logs ENABLE TRIGGER trg_scan_logs_immutable")
+
+        if _table_exists(st, "checkin_entitlements"):
+            if clean_ticket is not None:
+                st.execute(
+                    """
+                    UPDATE checkin_entitlements e
+                    SET uses = COALESCE((
+                            SELECT jsonb_object_agg(s.station, s.cnt)
+                            FROM (
+                                SELECT c.station, count(*)::int AS cnt
+                                FROM station_consumptions c
+                                WHERE c.event_id = e.event_id AND c.ticket_id = e.ticket_id
+                                GROUP BY c.station
+                            ) s
+                        ), '{}'::jsonb),
+                        version = nextval('checkin_version_seq')
+                    WHERE e.event_id = ? AND e.ticket_id = ?
+                    """,
+                    (event_id, clean_ticket),
+                )
+            else:
+                st.execute(
+                    """
+                    UPDATE checkin_entitlements e
+                    SET uses = COALESCE((
+                            SELECT jsonb_object_agg(s.station, s.cnt)
+                            FROM (
+                                SELECT c.station, count(*)::int AS cnt
+                                FROM station_consumptions c
+                                WHERE c.event_id = e.event_id AND c.ticket_id = e.ticket_id
+                                GROUP BY c.station
+                            ) s
+                        ), '{}'::jsonb),
+                        version = nextval('checkin_version_seq')
+                    WHERE e.event_id = ?
+                    """,
+                    (event_id,),
+                )
+
+        if _table_exists(st, "checkin_snapshot_meta"):
+            st.execute(
+                """
+                UPDATE checkin_snapshot_meta
+                SET refreshed_at = now(),
+                    max_version = COALESCE(
+                        (SELECT max(version) FROM checkin_entitlements WHERE event_id = ?),
+                        0
+                    )
+                WHERE event_id = ?
+                """,
+                (event_id, event_id),
+            )
+
+    return {
+        "deleted_admissions": deleted_admissions,
+        "deleted_consumptions": deleted_consumptions,
+        "deleted_scan_logs": deleted_scan_logs,
+    }
